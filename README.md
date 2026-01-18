@@ -1,26 +1,31 @@
 # Auto Rejoin Roblox Private Server (Rooted Android)
 
-Script Python ini akan otomatis memantau status bermain Anda dan melakukan rejoin ke Private Server jika terdeteksi pindah ke public server atau terputus.
+This Python script monitors your gameplay status and automatically rejoins a Private Server if a switch to a public server or a disconnection is detected.
 
-## ✨ Fitur
+## ✨ Features
 
-- ✅ Deteksi otomatis perpindahan server (Private → Public) menggunakan Game ID tracking
-- ✅ Auto rejoin ke Private Server dalam waktu 10-30 detik
-- ✅ Monitoring real-time status in-game
-- ✅ SELinux auto-configuration untuk kompatibilitas maksimal
+- ✅ Automatic server switch detection (Private → Public) using Game ID tracking
+- ✅ Auto rejoin Private Server within 10-30 seconds
+- ✅ Real-time in-game status monitoring
+- ✅ SELinux auto-configuration for maximum compatibility
+- ✅ Clean terminal output with timestamps
+- ✅ Support for Cloud Phones & PC Emulators (with root)
 
-## 📋 Syarat Wajib
+## 📋 Requirements
 
-1. **Rooted Android Device** (Wajib - Magisk/KernelSU)
-2. **Termux** app terinstall
-3. **Roblox** app terinstall
-4. **Roblox Cookie** (.ROBLOSECURITY) untuk Game ID tracking
+1. **Rooted Android Device** (Required - Magisk/KernelSU)
+   - Physical Android phone/tablet
+   - Cloud phone (Redfinger, NOX Cloud, etc.)
+   - PC Emulator (BlueStacks, LDPlayer, NoxPlayer, MEmu - with root enabled)
+2. **Termux** app installed
+3. **Roblox** app installed
+4. **Roblox Cookie** (.ROBLOSECURITY) for Game ID tracking
 
-## 🔧 Cara Install
+## 🔧 Installation
 
 ### 1. Setup Termux
 
-Buka Termux dan jalankan:
+Open Termux and run:
 
 ```bash
 pkg update && pkg upgrade
@@ -34,71 +39,71 @@ pip install requests
 termux-setup-storage
 ```
 
-Izinkan akses storage saat diminta.
+Allow access when prompted.
 
 ### 3. Download/Copy Script
 
-Simpan script di folder yang mudah diakses (misal `/sdcard`):
+Save the script in an accessible folder (e.g., `/sdcard`):
 
 ```bash
 git clone https://github.com/Galkurta/AutoRejoin.git
 cd AutoRejoin
 ```
 
-## ⚙️ Konfigurasi (`config.json`)
+## ⚙️ Configuration (`config.json`)
 
-### 1. Dapatkan Link Private Server
+### 1. Get Private Server VIP Link
 
-- Buka Private Server Roblox Anda
-- Copy link share (contoh: `https://www.roblox.com/share?code=XXXXX&type=Server`)
+- Open your Roblox Private Server
+- Copy the share link (example: `https://www.roblox.com/share?code=XXXXX&type=Server`)
 
-### 2. Dapatkan User ID
+### 2. Get User ID
 
-- Buka profil Roblox Anda
-- User ID ada di URL (contoh: `roblox.com/users/12345678/profile`)
+- Open your Roblox profile
+- User ID is in the URL (example: `roblox.com/users/12345678/profile`)
 
-### 3. Dapatkan Roblox Cookie (.ROBLOSECURITY)
+### 3. Get Roblox Cookie (.ROBLOSECURITY)
 
-**PENTING: Cookie ini sangat rahasia! Jangan share ke siapapun!**
+**IMPORTANT: This cookie is highly sensitive! Do not share it with anyone!**
 
-#### Di Browser Desktop/Mobile:
+#### On Desktop/Mobile Browser:
 
-1. Buka [roblox.com](https://www.roblox.com) dan login
-2. Buka Developer Tools (F12)
-3. Pilih tab **Application** (Chrome) atau **Storage** (Firefox)
-4. Klik **Cookies** → `https://www.roblox.com`
-5. Cari cookie bernama `.ROBLOSECURITY`
-6. Copy seluruh nilai cookie (mulai dari `_|WARNING:...`)
+1. Open [roblox.com](https://www.roblox.com) and login
+2. Open Developer Tools (F12)
+3. Select **Application** (Chrome) or **Storage** (Firefox) tab
+4. Click **Cookies** → `https://www.roblox.com`
+5. Find the cookie named `.ROBLOSECURITY`
+6. Copy the entire cookie value (starting from `_|WARNING:...`)
 
-#### Di Chrome Android:
+#### On Chrome Android:
 
-1. Install ekstensi seperti "Cookie Editor" atau gunakan `chrome://inspect`
-2. Buka roblox.com dan login
-3. Buka Cookie Editor dan copy `.ROBLOSECURITY`
+1. Install an extension like "Cookie Editor" or use `chrome://inspect`
+2. Open roblox.com and login
+3. Open Cookie Editor and copy `.ROBLOSECURITY`
 
 ### 4. Edit config.json
 
 ```json
 {
-  "ps_link": "https://www.roblox.com/share?code=KODE_ANDA&type=Server",
+  "ps_link": "https://www.roblox.com/share?code=YOUR_CODE&type=Server",
   "user_id": 12345678,
   "check_interval": 10,
   "restart_delay": 30,
-  "roblox_cookie": "_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_COOKIE_ANDA_DISINI"
+  "roblox_cookie": "_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_YOUR_COOKIE_HERE"
 }
 ```
 
-**Parameter:**
+**Parameters:**
 
-- `ps_link`: Link Private Server Anda
-- `user_id`: User ID Roblox Anda
-- `check_interval`: Interval pengecekan dalam detik (10 = cek setiap 10 detik)
-- `restart_delay`: Waktu tunggu loading game dalam detik (30 = tunggu 30 detik)
-- `roblox_cookie`: Cookie .ROBLOSECURITY untuk Game ID tracking
+- `ps_link`: Your Private Server Link (replaces `vip_link`)
+- `user_id`: Your Roblox User ID
+- `check_interval`: Check interval in seconds (10 = check every 10 seconds)
+- `restart_delay`: Wait time for game loading in seconds (30 = wait 30 seconds)
+- `roblox_cookie`: .ROBLOSECURITY Cookie for Game ID tracking
 
-## 🚀 Cara Menjalankan
+## 🚀 How to Run
 
-### Metode 1: Dengan su (Recommended)
+### Method 1: Using su (Recommended)
 
 ```bash
 cd /sdcard/AutoRejoin
@@ -106,7 +111,7 @@ su
 python main.py
 ```
 
-### Metode 2: Dengan tsu (alternatif)
+### Method 2: Using tsu (Alternative)
 
 ```bash
 cd /sdcard/AutoRejoin
@@ -114,108 +119,183 @@ tsu
 python main.py
 ```
 
-**Pastikan memberi izin Root saat popup Magisk/KernelSU muncul!**
+**Ensure you grant Root permissions when the Magisk/KernelSU popup appears!**
 
-## 📊 Output Normal
+## 📊 Normal Output
 
 ```
 ==================================================
-  Auto Rejoin Roblox Script (Termux/Root)
-==================================================
-Checking SELinux status...
-  ✓ SELinux set to Permissive (temporary)
-
-📊 Configuration:
-   User ID: 12345678
-   Check Interval: 10s
-   Restart Delay: 30s
-   Cookie: Set ✓ (Game ID tracking enabled)
-
+  🎮 Auto Rejoin Roblox Private Server
 ==================================================
 
-Stopping Roblox...
-  > Roblox stopped.
-Opening Private Server Link...
-  ✓ Roblox opened successfully!
+✓ Root access granted
+📋 Configuration:
+   • User ID: 12345678
+   • Check Interval: 10s
+   • Restart Delay: 30s
+   • Game ID Tracking: Enabled ✓
 
+🔄 Starting Roblox...
 ⏳ Waiting 60s for game to load...
+🔍 Detecting private server...
+✓ Game ID: 49073d8d-d97...
 
-🔍 Getting private server game ID...
-✅ Private server game ID: xxxx-xxxx-xxxx-xxxx-xxxx
+==================================================
+  📊 Monitoring Status
+==================================================
 
-[Check #1] 🟢 In-Game ✓ (ID: xxxx...)
-[Check #2] 🟢 In-Game ✓ (ID: xxxx...)
-[Check #3] 🔴 Server changed (Private→Public) - Rejoining...
-   Game ID: xxxx... → xxxx...
-✅ Rejoined with game ID: xxxx...
-[Check #4] 🟢 In-Game ✓ (ID: xxxx...)
+[14:23:15] 🟢 In-Game (Private Server)
+[14:23:25] 🟢 In-Game (Private Server)
+[14:23:35] 🔴 Server switched - Rejoining...
+           ✓ Rejoined successfully
+[14:24:15] 🟢 In-Game (Private Server)
 ```
 
-## 🔍 Cara Kerja
+## 🔍 How It Works
 
-Script ini menggunakan **Game ID Tracking** untuk mendeteksi perpindahan server:
+This script uses **Game ID Tracking** to detect server switches:
 
-1. **Saat Start**: Script membuka Private Server dan mencatat Game ID-nya
-2. **Monitoring**: Setiap X detik (sesuai `check_interval`), script:
-   - Cek apakah Roblox masih berjalan
-   - Cek Game ID saat ini melalui Roblox Presence API
-   - Bandingkan dengan Game ID Private Server
-3. **Auto Rejoin**: Jika Game ID berubah (pindah ke public server), script akan:
-   - Force stop Roblox
-   - Buka kembali Private Server link
-   - Update Game ID yang diharapkan
+1. **On Start**: The script opens the Private Server and records its Game ID.
+2. **Monitoring**: Every X seconds (according to `check_interval`), the script:
+   - Checks if Roblox is running.
+   - Checks the current Game ID via the Roblox Presence API.
+   - Compares it with the Private Server's Game ID.
+3. **Auto Rejoin**: If the Game ID changes (moved to a public server), the script will:
+   - Force stop Roblox.
+   - Reopen the Private Server link.
+   - Update the expected Game ID.
 
-## ❓ Troubleshooting
+## 💻 Support for Cloud Phone & PC Emulator
+
+### Cloud Phone (Redfinger, NOX Cloud, etc.)
+
+✅ **Compatible** - The script works on cloud phones provided:
+
+1. Cloud phone has root access.
+2. Termux can be installed.
+3. Stable internet connection.
+
+**Setup:**
+
+1. Install Termux on the cloud phone.
+2. Follow the installation instructions above.
+3. Run the script as usual.
+
+**Benefits:**
+
+- Runs 24/7 without relying on a physical device.
+- Does not drain your main device's battery.
+- Accessible from anywhere.
+
+### PC Emulator (BlueStacks, LDPlayer, NoxPlayer, MEmu)
+
+✅ **Compatible with root requirement** - Choose an emulator that supports root:
+
+| Emulator         | Root Support    | Recommended            |
+| ---------------- | --------------- | ---------------------- |
+| **LDPlayer**     | ✅ Built-in     | ⭐⭐⭐⭐⭐ Recommended |
+| **NoxPlayer**    | ✅ Built-in     | ⭐⭐⭐⭐               |
+| **MEmu**         | ✅ Built-in     | ⭐⭐⭐⭐               |
+| **BlueStacks 5** | ⚠️ Needs Magisk | ⭐⭐⭐                 |
+
+**How to Enable Root:**
+
+**LDPlayer:**
+
+1. Open Settings → Other Settings
+2. Enable "Root permission"
+3. Restart emulator
+
+**NoxPlayer:**
+
+1. Click gear icon (Settings)
+2. General tab
+3. Enable "Root startup"
+4. Restart emulator
+
+**MEmu:**
+
+1. Open Settings
+2. Enable "ROOT"
+3. Restart emulator
+
+**BlueStacks 5:**
+
+1. Install Magisk via recovery
+2. Follow Magisk installation guide
+3. More complex - not recommended for beginners
+
+### Performance & Recommendations
+
+**Physical Device:**
+
+- Best for daily use.
+- Battery efficient with split `check_interval` 30s.
+- Most stable.
+
+**Cloud Phone:**
+
+- Best for 24/7 operation.
+- Independent of physical device.
+- Requires cloud service subscription.
+
+**PC Emulator:**
+
+- Best for testing/development.
+- Can run multiple instances.
+- High RAM usage.
+
+**Tip:** For 24/7 operation, use a Cloud Phone or a PC that is always on with an emulator.
 
 ### SELinux Error
 
 ```bash
-# Cek status
+# Check status
 su -c "getenforce"
 
-# Set manual ke Permissive
+# Manually set to Permissive
 su -c "setenforce 0"
 ```
 
-### Game ID Tidak Terdeteksi
+### Game ID Not Detected
 
-- Pastikan `roblox_cookie` sudah diisi dengan benar di config.json
-- Cookie harus lengkap dan valid (login di browser untuk verifikasi)
-- Jangan ada spasi atau karakter tambahan saat copy-paste
+- Ensure `roblox_cookie` is correctly set in config.json.
+- Cookie must be complete and valid (login to browser to verify).
+- Avoid spaces or extra characters when copy-pasting.
 
-### Roblox Tidak Terbuka
+### Roblox Not Opening
 
 ```bash
-# Test manual
-su -c "am start -a android.intent.action.VIEW -d 'LINK_PS_ANDA' -p com.roblox.client"
+# Manual test
+su -c "am start -a android.intent.action.VIEW -d 'YOUR_VIP_LINK' -p com.roblox.client"
 
-# Atau test dengan monkey
+# Or test with monkey
 su -c "monkey -p com.roblox.client 1"
 ```
 
 ### Script Crash/Error
 
-- Pastikan Python dan requests sudah terinstall: `pip install requests`
-- Check permission root: `su -c "id"`
-- Lihat log error untuk debugging
+- Ensure Python and requests are installed: `pip install requests`
+- Check root permission: `su -c "id"`
+- Check error logs for debugging.
 
-## ⚠️ Catatan Keamanan
+## ⚠️ Security Notes
 
-1. **JANGAN SHARE** file `config.json` atau cookie `.ROBLOSECURITY` Anda!
-2. Cookie ini setara dengan password - siapapun yang punya cookie bisa login sebagai Anda
-3. Ganti password Roblox secara berkala untuk keamanan
-4. Logout dari semua device akan mereset cookie (perlu setup ulang)
+1. **DO NOT SHARE** your `config.json` file or `.ROBLOSECURITY` cookie!
+2. This cookie is equivalent to a password - anyone with it can log in as you.
+3. Change your Roblox password periodically for security.
+4. Logging out from all devices will reset the cookie (requires re-setup).
 
-## 📱 Tips Penggunaan
+## 📱 Usage Tips
 
-- Set `check_interval` ke 10 untuk deteksi cepat (lebih banyak API calls)
-- Set `check_interval` ke 30 untuk menghemat baterai (deteksi lebih lambat)
-- `restart_delay` sebaiknya 30-60 detik tergantung kecepatan loading game Anda
-- Script akan berjalan terus sampai di-stop manual (Ctrl+C)
+- Set `check_interval` to 10 for fast detection (more API calls).
+- Set `check_interval` to 30 to save battery (slower detection).
+- `restart_delay` should be 30-60 seconds depending on your game loading speed.
+- The script runs continuously until manually stopped (Ctrl+C).
 
-## 🔄 Auto-Start Saat Boot (Opsional)
+## 🔄 Auto-Start on Boot (Optional)
 
-Untuk menjalankan script otomatis saat device boot, gunakan Termux:Boot atau Tasker dengan root.
+To run the script automatically on device boot, use Termux:Boot or Tasker with root.
 
 ## 📝 License
 
@@ -223,8 +303,8 @@ Free to use and modify.
 
 ## 🤝 Support
 
-Jika ada masalah atau pertanyaan, buat issue di repository ini.
+If there are issues or questions, open an issue in this repository.
 
 ---
 
-**Disclaimer**: Script ini untuk educational purposes. Gunakan dengan bijak dan ikuti Terms of Service Roblox.
+**Disclaimer**: This script is for educational purposes. Use wisely and follow Roblox Terms of Service.
