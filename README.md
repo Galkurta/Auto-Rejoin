@@ -9,6 +9,7 @@ This Python script monitors your gameplay status and automatically rejoins a Pri
 - ✅ Real-time in-game status monitoring
 - ✅ SELinux auto-configuration for maximum compatibility
 - ✅ Clean terminal output with timestamps
+- ✅ **New:** Auto cookie extractor script included
 - ✅ Support for Cloud Phones & PC Emulators (with root)
 
 ## 📋 Requirements
@@ -52,7 +53,7 @@ cd AutoRejoin
 
 ## ⚙️ Configuration (`config.json`)
 
-### 1. Get Private Server VIP Link
+### 1. Get Private Server Link
 
 - Open your Roblox Private Server
 - Copy the share link (example: `https://www.roblox.com/share?code=XXXXX&type=Server`)
@@ -66,7 +67,19 @@ cd AutoRejoin
 
 **IMPORTANT: This cookie is highly sensitive! Do not share it with anyone!**
 
-#### On Desktop/Mobile Browser:
+#### Option A: Automatic Extraction (Recommended)
+
+Run the included helper script to extract the cookie from your installed browser (Chrome, Edge, Firefox, etc.):
+
+```bash
+python getcookie.py
+```
+
+If successful, it will automatically update your `config.json`.
+
+#### Option B: Manual Method
+
+**On Desktop/Mobile Browser:**
 
 1. Open [roblox.com](https://www.roblox.com) and login
 2. Open Developer Tools (F12)
@@ -95,7 +108,7 @@ cd AutoRejoin
 
 **Parameters:**
 
-- `ps_link`: Your Private Server Link (replaces `vip_link`)
+- `ps_link`: Your Private Server Link (replaces `ps_link`)
 - `user_id`: Your Roblox User ID
 - `check_interval`: Check interval in seconds (10 = check every 10 seconds)
 - `restart_delay`: Wait time for game loading in seconds (30 = wait 30 seconds)
@@ -247,6 +260,14 @@ This script uses **Game ID Tracking** to detect server switches:
 
 **Tip:** For 24/7 operation, use a Cloud Phone or a PC that is always on with an emulator.
 
+### Cookie Extraction Failed
+
+If `getcookie.py` can't find your cookie:
+
+1. **Check installed browsers:** `su -c "pm list packages | grep -E 'chrome|firefox|edge'"`
+2. **Verify login:** Ensure you are logged into Roblox in that browser.
+3. **Try manual extraction:** Use the manual method described in Configuration.
+
 ### SELinux Error
 
 ```bash
@@ -267,7 +288,7 @@ su -c "setenforce 0"
 
 ```bash
 # Manual test
-su -c "am start -a android.intent.action.VIEW -d 'YOUR_VIP_LINK' -p com.roblox.client"
+su -c "am start -a android.intent.action.VIEW -d 'YOUR_PS_LINK' -p com.roblox.client"
 
 # Or test with monkey
 su -c "monkey -p com.roblox.client 1"
