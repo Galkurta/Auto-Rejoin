@@ -8,7 +8,6 @@ CONFIG_FILE = "config.json"
 ROBLOX_PACKAGE = "com.roblox.client"
 
 def load_config():
-    """Load configuration from json file."""
     if not os.path.exists(CONFIG_FILE):
         print(f"Error: {CONFIG_FILE} not found!")
         exit(1)
@@ -17,7 +16,6 @@ def load_config():
         return json.load(f)
 
 def check_root():
-    """Check if script has root access."""
     try:
         result = subprocess.run(['su', '-c', 'id'], 
                               capture_output=True, 
@@ -27,10 +25,6 @@ def check_root():
         return False
 
 def run_shell_cmd(cmd_str, use_root=False, silent=False):
-    """
-    Run a shell command.
-    Returns: (success: bool, output: str)
-    """
     if use_root:
         full_cmd = ['su', '-c', cmd_str]
     else:
@@ -57,14 +51,12 @@ def run_shell_cmd(cmd_str, use_root=False, silent=False):
         return False, str(e)
 
 def get_roblox_pid():
-    """Get Roblox process ID using pidof."""
     success, output = run_shell_cmd(f'pidof {ROBLOX_PACKAGE}', use_root=True, silent=True)
     if success and output:
         return output.split()[0]
     return None
 
 def force_stop_roblox():
-    """Force stop Roblox using multiple methods."""
     print("Stopping Roblox...")
     
     pid = get_roblox_pid()
