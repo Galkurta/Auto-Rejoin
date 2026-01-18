@@ -47,7 +47,7 @@ cd AutoRejoin
 
 ## ⚙️ Konfigurasi (`config.json`)
 
-### 1. Dapatkan VIP Link Private Server
+### 1. Dapatkan Link Private Server
 
 - Buka Private Server Roblox Anda
 - Copy link share (contoh: `https://www.roblox.com/share?code=XXXXX&type=Server`)
@@ -80,7 +80,7 @@ cd AutoRejoin
 
 ```json
 {
-  "vip_link": "https://www.roblox.com/share?code=KODE_ANDA&type=Server",
+  "ps_link": "https://www.roblox.com/share?code=KODE_ANDA&type=Server",
   "user_id": 12345678,
   "check_interval": 10,
   "restart_delay": 30,
@@ -90,7 +90,7 @@ cd AutoRejoin
 
 **Parameter:**
 
-- `vip_link`: Link VIP Private Server Anda
+- `ps_link`: Link Private Server Anda
 - `user_id`: User ID Roblox Anda
 - `check_interval`: Interval pengecekan dalam detik (10 = cek setiap 10 detik)
 - `restart_delay`: Waktu tunggu loading game dalam detik (30 = tunggu 30 detik)
@@ -135,7 +135,7 @@ Checking SELinux status...
 
 Stopping Roblox...
   > Roblox stopped.
-Opening VIP Link...
+Opening Private Server Link...
   ✓ Roblox opened successfully!
 
 ⏳ Waiting 60s for game to load...
@@ -187,7 +187,7 @@ su -c "setenforce 0"
 
 ```bash
 # Test manual
-su -c "am start -a android.intent.action.VIEW -d 'LINK_VIP_ANDA' -p com.roblox.client"
+su -c "am start -a android.intent.action.VIEW -d 'LINK_PS_ANDA' -p com.roblox.client"
 
 # Atau test dengan monkey
 su -c "monkey -p com.roblox.client 1"
