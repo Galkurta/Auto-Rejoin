@@ -18,7 +18,9 @@ This Python script monitors your gameplay status and automatically rejoins a Pri
    - Physical Android phone/tablet
    - Cloud phone (Redfinger, NOX Cloud, etc.)
    - PC Emulator (BlueStacks, LDPlayer, NoxPlayer, MEmu - with root enabled)
-2. **Termux** app installed
+2. **Termux** app installed (Recommended: **F-Droid version**)
+   - ⚠️ **Important:** Do not use the Google Play Store version (it is outdated).
+   - Download from [F-Droid](https://f-droid.org/packages/com.termux/) or [GitHub Releases](https://github.com/termux/termux-app/releases).
 3. **Roblox** app installed
 4. **Roblox Cookie** (.ROBLOSECURITY) for Game ID tracking
 
