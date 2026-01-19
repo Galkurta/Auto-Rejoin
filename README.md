@@ -49,8 +49,8 @@ Allow access when prompted.
 Save the script in an accessible folder (e.g., `/sdcard`):
 
 ```bash
-git clone https://github.com/Galkurta/AutoRejoin.git
-cd AutoRejoin
+git clone https://github.com/Galkurta/Auto-Rejoin.git
+cd Auto-Rejoin
 ```
 
 ## ⚙️ Configuration (`config.json`)
