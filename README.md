@@ -119,7 +119,7 @@ If successful, it will automatically update your `config.json`.
 ### Method 1: Using su (Recommended)
 
 ```bash
-cd /sdcard/AutoRejoin
+cd /sdcard/Auto-Rejoin
 su
 python main.py
 ```
@@ -127,7 +127,7 @@ python main.py
 ### Method 2: Using tsu (Alternative)
 
 ```bash
-cd /sdcard/AutoRejoin
+cd /sdcard/Auto-Rejoin
 tsu
 python main.py
 ```
