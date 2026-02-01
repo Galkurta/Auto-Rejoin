@@ -1,20 +1,21 @@
 import os
 import time
+import psutil
 import subprocess
+import webbrowser
 import requests
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-import psutil
 
 load_dotenv()
 
-ROBLOX_PACKAGE = "com.roblox.client"
+ROBLOX_PROCESS_NAMES = ["RobloxPlayerBeta.exe", "RobloxPlayer.exe"]
 
 
 class DiscordNotifier:
     def __init__(self, user_id):
         self.webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "")
-        self.webhook_name = os.getenv("DISCORD_WEBHOOK_NAME", "Auto Rejoin Bot (Android)")
+        self.webhook_name = os.getenv("DISCORD_WEBHOOK_NAME", "Auto Rejoin Bot (PC)")
         self.mention_user = os.getenv("DISCORD_MENTION_USER", "").strip()
         self.enabled = (
             os.getenv("DISCORD_ENABLED", "false").lower() == "true"
@@ -163,63 +164,50 @@ class DiscordNotifier:
         self.send_embed("Error Occurred", f"```{error}```", 16711680)
 
 
-def check_root():
-    try:
-        result = subprocess.run(["su", "-c", "id"], capture_output=True, timeout=5)
-        return result.returncode == 0
-    except:
-        return False
-
-
-def run_shell_cmd(cmd_str, use_root=False, silent=False):
-    if use_root:
-        full_cmd = ["su", "-c", cmd_str]
-    else:
-        full_cmd = cmd_str.split()
-
-    try:
-        result = subprocess.run(full_cmd, capture_output=True, text=True, timeout=10)
-
-        if result.returncode == 0:
-            return True, result.stdout.strip()
-        else:
-            return False, result.stderr.strip()
-    except Exception as e:
-        return False, str(e)
-
-
-def get_roblox_pid():
-    success, output = run_shell_cmd(
-        f"pidof {ROBLOX_PACKAGE}", use_root=True, silent=True
-    )
-    if success and output:
-        return output.split()[0]
+def find_roblox_process():
+    for proc in psutil.process_iter(["pid", "name"]):
+        try:
+            if proc.info["name"] in ROBLOX_PROCESS_NAMES:
+                return proc
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
     return None
 
 
-def force_stop_roblox():
-    pid = get_roblox_pid()
-    if pid:
-        run_shell_cmd(f"kill -9 {pid}", use_root=True, silent=True)
-        time.sleep(1)
-
-    run_shell_cmd(f"am force-stop {ROBLOX_PACKAGE}", use_root=True, silent=True)
-    time.sleep(1)
-
-
-def open_ps_link(link):
-    cmd = f'am start -a android.intent.action.VIEW -d "{link}" -p {ROBLOX_PACKAGE}'
-    success, _ = run_shell_cmd(cmd, use_root=True, silent=True)
-    return success
-
-
 def is_roblox_running():
-    return get_roblox_pid() is not None
+    return find_roblox_process() is not None
+
+
+def kill_roblox():
+    killed = False
+    for proc in psutil.process_iter(["pid", "name"]):
+        try:
+            if proc.info["name"] in ROBLOX_PROCESS_NAMES:
+                proc.kill()
+                killed = True
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+
+    if killed:
+        time.sleep(2)
+
+    return killed
+
+
+def open_private_server(link):
+    try:
+        webbrowser.open(link)
+        return True
+    except Exception as e:
+        print(f"Failed to open link: {e}")
+        return False
 
 
 def get_user_info(user_id):
     url = f"https://users.roblox.com/v1/users/{user_id}"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
 
     try:
         r = requests.get(url, headers=headers, timeout=10)
@@ -240,7 +228,10 @@ def get_user_avatar(user_id):
         "format": "Png",
         "isCircular": True,
     }
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+    }
 
     try:
         r = requests.get(url, params=params, headers=headers, timeout=10)
@@ -258,7 +249,10 @@ def get_user_avatar(user_id):
 def get_game_name(universe_id):
     url = "https://games.roblox.com/v1/games"
     params = {"universeIds": universe_id}
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json",
+    }
 
     try:
         r = requests.get(url, params=params, headers=headers, timeout=10)
@@ -276,7 +270,10 @@ def get_game_name(universe_id):
 def check_user_presence(user_id, roblox_cookie=None):
     url = "https://presence.roblox.com/v1/presence/users"
     payload = {"userIds": [user_id]}
-    headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    }
 
     cookies = {}
     if roblox_cookie:
@@ -317,29 +314,11 @@ def should_rejoin(user_id, expected_game_id, roblox_cookie=None):
     return False, "OK", current_game_id, universe_id
 
 
-def set_selinux_permissive():
-    success, mode = run_shell_cmd("getenforce", use_root=True, silent=True)
-    if success and mode.strip() == "Enforcing":
-        run_shell_cmd("setenforce 0", use_root=True, silent=True)
-
-
-def print_header():
-    print("\n" + "-" * 50)
-    print("  Auto Rejoin Roblox Private Server")
-    print("-" * 50 + "\n")
-
-
 def main():
     if not os.path.exists(".env"):
         print("Error: .env file not found")
         print("Run: python setup.py")
         return
-
-    if not check_root():
-        print("Error: Root access required")
-        return
-
-    set_selinux_permissive()
 
     ps_link = os.getenv("PS_LINK")
     user_id = os.getenv("USER_ID")
@@ -354,18 +333,31 @@ def main():
         print("Run: python setup.py")
         return
 
+    if not user_id or user_id == "0":
+        print("Error: Set your USER_ID in .env file")
+        print("Run: python setup.py")
+        return
+
     print(f"Config: User {user_id}, Interval {interval}s")
+    if discord.enabled:
+        print(f"Discord notifications enabled")
 
-    force_stop_roblox()
-    time.sleep(2)
+    if is_roblox_running():
+        print("Roblox is already running")
+        print("Stopping current instance...")
+        kill_roblox()
+        time.sleep(2)
 
-    if not open_ps_link(ps_link):
+    print("Starting Roblox...")
+    if not open_private_server(ps_link):
         print("Error: Failed to open Roblox")
         return
 
     print(f"Initializing...")
+    print("(Roblox should open in your browser and launch the game)")
     time.sleep(restart_delay * 2)
 
+    print()
     _, private_game_id, _ = check_user_presence(user_id, roblox_cookie)
 
     if private_game_id:
@@ -391,9 +383,9 @@ def main():
 
                 discord.notify_rejoin(reason, current_game_id)
 
-                force_stop_roblox()
+                kill_roblox()
                 time.sleep(2)
-                open_ps_link(ps_link)
+                open_private_server(ps_link)
                 time.sleep(restart_delay * 2)
 
                 _, new_game_id, new_universe_id = check_user_presence(user_id, roblox_cookie)

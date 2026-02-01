@@ -33,7 +33,7 @@ Open Termux and run:
 ```bash
 pkg update && pkg upgrade
 pkg install python
-pip install requests
+pip install requests python-dotenv psutil
 ```
 
 ### 2. Setup Storage Permission
@@ -53,68 +53,58 @@ git clone https://github.com/Galkurta/Auto-Rejoin.git
 cd Auto-Rejoin
 ```
 
-## ⚙️ Configuration (`config.json`)
+## ⚙️ Configuration (`.env`)
 
-### 1. Get Private Server Link
+### 1. Run Setup Script (Recommended)
 
-- Open your Roblox Private Server
-- Copy the share link (example: `https://www.roblox.com/share?code=XXXXX&type=Server`)
-
-### 2. Get User ID
-
-- Open your Roblox profile
-- User ID is in the URL (example: `roblox.com/users/12345678/profile`)
-
-### 3. Get Roblox Cookie (.ROBLOSECURITY)
-
-**IMPORTANT: This cookie is highly sensitive! Do not share it with anyone!**
-
-#### Option A: Automatic Extraction (Recommended)
-
-Run the included helper script to extract the cookie from your installed browser (Chrome, Edge, Firefox, etc.):
+The easiest way to configure the script is to run:
 
 ```bash
-python getcookie.py
+python setup.py
 ```
 
-If successful, it will automatically update your `config.json`.
+This will guide you through creating the `.env` file interactively.
 
-#### Option B: Manual Method
+### 2. Manual Configuration
 
-**On Desktop/Mobile Browser:**
+Create a file named `.env` in the same folder as `main.py` and add the following:
 
-1. Open [roblox.com](https://www.roblox.com) and login
-2. Open Developer Tools (F12)
-3. Select **Application** (Chrome) or **Storage** (Firefox) tab
-4. Click **Cookies** → `https://www.roblox.com`
-5. Find the cookie named `.ROBLOSECURITY`
-6. Copy the entire cookie value (starting from `_|WARNING:...`)
+```env
+# Private Server Link
+PS_LINK=https://www.roblox.com/share?code=YOUR_CODE&type=Server
 
-#### On Chrome Android:
+# Your Roblox User ID
+USER_ID=12345678
 
-1. Install an extension like "Cookie Editor" or use `chrome://inspect`
-2. Open roblox.com and login
-3. Open Cookie Editor and copy `.ROBLOSECURITY`
+# Monitoring Settings
+CHECK_INTERVAL=30
+RESTART_DELAY=15
 
-### 4. Edit config.json
+# Roblox Cookie (Specific to the account used for checking)
+ROBLOX_COOKIE=_|WARNING:-DO-NOT-SHARE-THIS...
 
-```json
-{
-  "ps_link": "https://www.roblox.com/share?code=YOUR_CODE&type=Server",
-  "user_id": 12345678,
-  "check_interval": 10,
-  "restart_delay": 30,
-  "roblox_cookie": "_|WARNING:-DO-NOT-SHARE-THIS.--Sharing-this-will-allow-someone-to-log-in-as-you-and-to-steal-your-ROBUX-and-items.|_YOUR_COOKIE_HERE"
-}
+# Discord Webhook (Optional)
+DISCORD_ENABLED=true
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_NAME=Auto Rejoin Bot (Android)
+DISCORD_MENTION_USER=YOUR_DISCORD_USER_ID_OR_ROLE
+DISCORD_NOTIFY_ON_START=true
+DISCORD_NOTIFY_ON_REJOIN=true
+DISCORD_NOTIFY_ON_ERROR=true
 ```
 
-**Parameters:**
+### Parameters Explanation
 
-- `ps_link`: Your Private Server Link (replaces `ps_link`)
-- `user_id`: Your Roblox User ID
-- `check_interval`: Check interval in seconds (10 = check every 10 seconds)
-- `restart_delay`: Wait time for game loading in seconds (30 = wait 30 seconds)
-- `roblox_cookie`: .ROBLOSECURITY Cookie for Game ID tracking
+| Variable               | Description                                                    |
+| :--------------------- | :------------------------------------------------------------- |
+| `PS_LINK`              | Your Private Server Link.                                      |
+| `USER_ID`              | Your Roblox User ID.                                           |
+| `CHECK_INTERVAL`       | How often to check status (in seconds). Default: `30`.         |
+| `RESTART_DELAY`        | Wait time for game to load (in seconds). Default: `15`.        |
+| `ROBLOX_COOKIE`        | Required for Game ID/Universe ID tracking.                     |
+| `DISCORD_ENABLED`      | Set to `true` to enable Discord notifications.                 |
+| `DISCORD_WEBHOOK_URL`  | Your Discord Webhook URL.                                      |
+| `DISCORD_MENTION_USER` | User/Role ID to ping (e.g., `123456...`). Leave empty if none. |
 
 ## 🚀 How to Run
 
