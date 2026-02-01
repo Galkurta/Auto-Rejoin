@@ -2,6 +2,7 @@
 import os
 import sqlite3
 import subprocess
+import requests
 from dotenv import load_dotenv
 
 
@@ -232,6 +233,29 @@ def auto_extract_cookie():
     return None
 
 
+def get_roblox_user_info(cookie):
+    try:
+        url = "https://users.roblox.com/v1/users/authenticated"
+        headers = {
+            "Cookie": f".ROBLOSECURITY={cookie}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("id"), data.get("name")
+        elif response.status_code == 401:
+            print(f"Error: Cookie appears to be invalid or expired (Status 401)")
+            return None, None
+        else:
+            print(f"Error: Failed to fetch user info (Status {response.status_code})")
+            return None, None
+    except Exception as e:
+        print(f"Error fetching user info: {e}")
+        return None, None
+
+
 def setup():
     print("\nAuto Rejoin Setup")
     print("----------------\n")
@@ -248,37 +272,74 @@ def setup():
 
     print("Enter the following information:\n")
 
-    ps_link = input("Private Server Link: ").strip()
-    while not ps_link:
-        ps_link = input("Private Server Link (required): ").strip()
-
-    user_id = input("Roblox User ID: ").strip()
-    while not user_id or not user_id.isdigit():
-        user_id = input("Roblox User ID (numbers only, required): ").strip()
-
-    check_interval = input("Check Interval (seconds, default 30): ").strip() or "30"
-    restart_delay = input("Restart Delay (seconds, default 15): ").strip() or "15"
-
-    print("\nOptional - leave empty to skip:")
-
-    print("\nRoblox Cookie:")
+    # 1. Get Cookie FIRST to try and auto-get User ID
+    print("Roblox Cookie:")
     auto_cookie = (
         input("Auto-extract cookie from browser? (y/n, default y): ").strip().lower()
     )
     if auto_cookie != "n":
         roblox_cookie = auto_extract_cookie()
     else:
+        roblox_cookie = None
+
+    if not roblox_cookie:
         roblox_cookie = input("Roblox Cookie (.ROBLOSECURITY): ").strip()
 
-    discord_webhook = input("Discord Webhook URL: ").strip()
+    # 2. Try to get User ID from Cookie
+    fetched_user_id = None
+    fetched_username = None
+    
+    if roblox_cookie:
+        print("\nVerifying cookie and fetching User ID...")
+        fetched_user_id, fetched_username = get_roblox_user_info(roblox_cookie)
+        if fetched_user_id:
+            print(f"✓ Success! Logged in as: {fetched_username} (ID: {fetched_user_id})")
+        else:
+            print("⚠ Could not fetch User ID automatically.")
+
+    print("") # Spacer
+
+    ps_link = input("Private Server Link: ").strip()
+    while not ps_link:
+        ps_link = input("Private Server Link (required): ").strip()
+
+    if fetched_user_id:
+        use_fetched = input(f"Use User ID {fetched_user_id} ({fetched_username})? (y/n, default y): ").strip().lower()
+        if use_fetched != "n":
+             user_id = str(fetched_user_id)
+        else:
+             user_id = input("Roblox User ID: ").strip()
+    else:
+        user_id = input("Roblox User ID: ").strip()
+    
+    while not user_id or not user_id.isdigit():
+        user_id = input("Roblox User ID (numbers only, required): ").strip()
+
+    check_interval = input("Check Interval (seconds, default 30): ").strip() or "30"
+    restart_delay = input("Restart Delay (seconds, default 15): ").strip() or "15"
+
+    print("\n----------------\nDiscord Configuration (Optional)\n")
+
+    configure_discord = input("Do you want to setup Discord Webhook? (y/n, default n): ").strip().lower()
+
+    if configure_discord == "y":
+        discord_webhook = input("Discord Webhook URL: ").strip()
+        while not discord_webhook:
+             print("Webhook URL is required if you chose 'y'.")
+             discord_webhook = input("Discord Webhook URL (or leave empty to skip): ").strip()
+             if not discord_webhook:
+                 break
+    else:
+        discord_webhook = ""
 
     if discord_webhook:
         discord_webhook_name = (
             input("Discord Bot Name (default: Auto Rejoin Bot): ").strip()
             or "Auto Rejoin Bot"
         )
+        print("\nNote: To find your Discord User ID, enable Developer Mode in Discord settings, right-click your profile, and click 'Copy ID'.")
         discord_mention_user = input(
-            "Discord User to Mention (e.g., 123456789012345678 or @username): "
+            "Discord User ID to Mention (e.g., 8328109058... or @username): "
         ).strip()
     else:
         discord_webhook_name = "Auto Rejoin Bot"

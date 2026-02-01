@@ -46,18 +46,27 @@ class DiscordNotifier:
             return self.mention_user
 
     def get_system_info(self):
-        cpu_percent = psutil.cpu_percent(interval=1)
-        ram = psutil.virtual_memory()
-        ram_percent = ram.percent
-        ram_used_gb = ram.used / (1024**3)
-        ram_total_gb = ram.total / (1024**3)
+        try:
+            cpu_percent = psutil.cpu_percent(interval=1)
+            ram = psutil.virtual_memory()
+            ram_percent = ram.percent
+            ram_used_gb = ram.used / (1024**3)
+            ram_total_gb = ram.total / (1024**3)
 
-        return {
-            "cpu_percent": cpu_percent,
-            "ram_percent": ram_percent,
-            "ram_used_gb": round(ram_used_gb, 2),
-            "ram_total_gb": round(ram_total_gb, 2),
-        }
+            return {
+                "cpu_percent": cpu_percent,
+                "ram_percent": ram_percent,
+                "ram_used_gb": round(ram_used_gb, 2),
+                "ram_total_gb": round(ram_total_gb, 2),
+            }
+        except Exception as e:
+            print(f"Warning: Failed to get system info: {e}")
+            return {
+                "cpu_percent": 0.0,
+                "ram_percent": 0.0,
+                "ram_used_gb": 0.0,
+                "ram_total_gb": 0.0,
+            }
 
     def send_embed(self, title, description, color, fields=None, show_user_info=True):
         if not self.enabled:
