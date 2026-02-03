@@ -32,7 +32,7 @@ class DiscordNotifier:
         )
         self.user_id = user_id
         self.username, self.display_name = get_user_info(user_id)
-        self.avatar_url = get_user_avatar(user_id)
+        self.avatar_url = get_user_avatar(user_id) if self.username else None
 
     def format_mention(self):
         if not self.mention_user:
@@ -77,9 +77,20 @@ class DiscordNotifier:
         if not fields:
             fields = []
 
-        mention = self.format_mention()
-        if mention:
-            description = f"{mention}\n\n{description}"
+        fields.append(
+            {
+                "name": "CPU Usage",
+                "value": f"{system_info['cpu_percent']}%",
+                "inline": True,
+            }
+        )
+        fields.append(
+            {
+                "name": "RAM Usage",
+                "value": f"{system_info['ram_used_gb']}/{system_info['ram_total_gb']} GB ({system_info['ram_percent']}%)",
+                "inline": True,
+            }
+        )
 
         embed = {
             "title": title,
@@ -90,23 +101,17 @@ class DiscordNotifier:
             "fields": fields,
         }
 
-        if show_user_info and (self.username or self.display_name):
-            author_data = {
-                "name": self.display_name or self.username or "Unknown User",
+        if show_user_info and self.username:
+            embed["author"] = {
+                "name": f"{self.display_name} (@{self.username})",
+                "icon_url": self.avatar_url,
             }
-            if self.avatar_url:
-                author_data["icon_url"] = self.avatar_url
-            embed["author"] = author_data
-
-        fields.append(
-            {
-                "name": "System Info",
-                "value": f"**CPU:** {system_info['cpu_percent']}%\n**RAM:** {system_info['ram_used_gb']}/{system_info['ram_total_gb']} GB ({system_info['ram_percent']}%)",
-                "inline": True,
-            }
-        )
 
         payload = {"username": self.webhook_name, "embeds": [embed]}
+
+        mention = self.format_mention()
+        if mention:
+            payload["content"] = mention
 
         try:
             requests.post(self.webhook_url, json=payload, timeout=5)
@@ -118,8 +123,8 @@ class DiscordNotifier:
         if not self.notify_on_start:
             return
         fields = [
-            {"name": "User ID", "value": f"`{user_id}`", "inline": True},
-            {"name": "Check Interval", "value": f"`{check_interval}s`", "inline": True},
+            {"name": "User ID", "value": str(user_id), "inline": True},
+            {"name": "Check Interval", "value": f"{check_interval}s", "inline": True},
         ]
         self.send_embed(
             "Auto Rejoin Started",
@@ -131,23 +136,19 @@ class DiscordNotifier:
     def notify_rejoin(self, reason, game_id=None):
         if not self.notify_on_rejoin:
             return
-        fields = [
-            {"name": "Reason", "value": f"**{reason}**", "inline": True},
-        ]
+        description = f"Reason: **{reason}**"
         if game_id:
             game_name = get_game_name(game_id)
             if game_name:
-                fields.append({"name": "Game", "value": game_name, "inline": True})
-            fields.append({"name": "Game ID", "value": f"`{game_id[:12]}...`", "inline": True})
-        self.send_embed("Rejoining Server", None, 16776960, fields)
+                description += f"\nGame: {game_name}"
+            description += f"\nGame ID: `{game_id[:12]}...`"
+        self.send_embed("Rejoining Server", description, 16776960)
 
     def notify_status(self, status, game_id=None, universe_id=None):
         if not self.enabled:
             return
 
-        fields = [
-            {"name": "Status", "value": f"**{status}**", "inline": True},
-        ]
+        fields = []
         if universe_id:
             game_name = get_game_name(universe_id)
             if game_name:
@@ -161,16 +162,14 @@ class DiscordNotifier:
         color = 5025616 if status == "In-Game" else 16776960
 
         title = "Status Update"
+        description = f"Current status: **{status}**"
 
-        self.send_embed(title, None, color, fields)
+        self.send_embed(title, description, color, fields)
 
     def notify_error(self, error):
         if not self.notify_on_error:
             return
-        fields = [
-            {"name": "Error", "value": f"```\n{error}\n```", "inline": False},
-        ]
-        self.send_embed("Error Occurred", None, 16711680, fields)
+        self.send_embed("Error Occurred", f"```{error}```", 16711680)
 
 
 def check_root():
