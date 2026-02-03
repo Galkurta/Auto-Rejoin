@@ -2,6 +2,7 @@
 import os
 import subprocess
 import re
+import requests
 from typing import Optional, Tuple, Dict, List
 from dotenv import load_dotenv
 
@@ -83,60 +84,70 @@ def find_storage_directory(package_name: str) -> Optional[str]:
     return None
 
 
+def extract_user_id_from_cookie(cookie: str) -> Optional[str]:
+    """Extract User ID from Roblox cookie using API."""
+    try:
+        headers = {
+            "Cookie": f".ROBLOSECURITY={cookie}",
+            "User-Agent": "Roblox/WinInet",
+            "Referer": "https://www.roblox.com/"
+        }
+        response = requests.get("https://users.roblox.com/v1/users/authenticated", headers=headers, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            user_id = data.get("id")
+            return str(user_id)
+    except Exception:
+        pass
+    return None
+
+
 def auto_extract_user_id() -> Optional[str]:
-    """Automatically extract User ID from Roblox app local files."""
-    if not check_root():
-        print("Root access not available. Cannot auto-detect User ID.")
-        return None
-    
+    """Automatically extract User ID from Roblox app local files or cookie."""
     print("Checking for Roblox app and local files...")
     
     package_name = find_roblox_package()
-    if not package_name:
-        print("Roblox app not found on device.")
-        print("Please install Roblox first, or enter User ID manually.")
-        return None
-    
-    log_dir = find_log_directory(package_name)
-    if log_dir:
-        print(f"Found log directory: {log_dir}")
-        success, output = run_shell_cmd(f"ls -t {log_dir}/*.log 2>/dev/null | head -1", use_root=True, silent=True)
-        if success and output.strip():
-            log_file = output.strip().split('\n')[0]
-            print(f"Found log file: {log_file}")
-            user_id = extract_user_id_from_log(log_file)
-            if user_id:
-                print(f"User ID extracted: {user_id}")
-                return user_id
+    if package_name:
+        log_dir = find_log_directory(package_name)
+        if log_dir:
+            print(f"Found log directory: {log_dir}")
+            success, output = run_shell_cmd(f"ls -t {log_dir}/*.log 2>/dev/null | head -1", use_root=True, silent=True)
+            if success and output.strip():
+                log_file = output.strip().split('\n')[0]
+                print(f"Found log file: {log_file}")
+                user_id = extract_user_id_from_log(log_file)
+                if user_id:
+                    print(f"User ID extracted: {user_id}")
+                    return user_id
+                else:
+                    print("No userId pattern found in log file.")
             else:
-                print("No userId pattern found in log file.")
+                print(f"No .log files found in {log_dir}")
         else:
-            print(f"No .log files found in {log_dir}")
-    else:
-        print("Log directory not found.")
-    
-    storage_dir = find_storage_directory(package_name)
-    if storage_dir:
-        print(f"Found storage directory: {storage_dir}")
-        success, output = run_shell_cmd(f"ls {storage_dir}/*.db* 2>/dev/null | head -5", use_root=True, silent=True)
-        if success and output.strip():
-            print(f"Checking storage files...")
-            for line in output.strip().split("\n"):
-                storage_file = line.strip()
-                if storage_file:
-                    print(f"Checking: {storage_file}")
-                    success, content = run_shell_cmd(f"cat {storage_file}", use_root=True, silent=True)
-                    if success and content:
-                        content_bytes = content.encode('utf-8', errors='ignore')
-                        user_matches = re.findall(rb'userId["\s:]+(\d{8,12})', content_bytes)
-                        if user_matches:
-                            user_id = user_matches[-1].decode('utf-8')
-                            print(f"User ID extracted: {user_id}")
-                            return user_id
+            print("Log directory not found.")
+        
+        storage_dir = find_storage_directory(package_name)
+        if storage_dir:
+            print(f"Found storage directory: {storage_dir}")
+            success, output = run_shell_cmd(f"ls {storage_dir}/*.db* 2>/dev/null | head -5", use_root=True, silent=True)
+            if success and output.strip():
+                print(f"Checking storage files...")
+                for line in output.strip().split("\n"):
+                    storage_file = line.strip()
+                    if storage_file:
+                        print(f"Checking: {storage_file}")
+                        success, content = run_shell_cmd(f"cat {storage_file}", use_root=True, silent=True)
+                        if success and content:
+                            content_bytes = content.encode('utf-8', errors='ignore')
+                            user_matches = re.findall(rb'userId["\s:]+(\d{8,12})', content_bytes)
+                            if user_matches:
+                                user_id = user_matches[-1].decode('utf-8')
+                                print(f"User ID extracted: {user_id}")
+                                return user_id
+            else:
+                print("No storage database files found.")
         else:
-            print("No storage database files found.")
-    else:
-        print("Storage directory not found.")
+            print("Storage directory not found.")
     
     print("User ID not found in local files.")
     print("You may need to run Roblox at least once to generate log files.")
@@ -258,11 +269,33 @@ def setup() -> None:
                 error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
             )
     else:
-        user_id = get_validated_input(
-            "Roblox User ID: ",
-            validate_user_id,
-            error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
-        )
+        use_cookie = get_yes_no_input("Use cookie to get User ID? (Cookie will NOT be saved)", False)
+        if use_cookie:
+            cookie = input("Enter your Roblox cookie (.ROBLOSECURITY): ").strip()
+            if cookie:
+                print("Fetching User ID from cookie...")
+                user_id = extract_user_id_from_cookie(cookie)
+                if user_id:
+                    print(f"User ID retrieved: {user_id}")
+                else:
+                    print("Failed to get User ID from cookie. Please enter manually.")
+                    user_id = get_validated_input(
+                        "Roblox User ID: ",
+                        validate_user_id,
+                        error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
+                    )
+            else:
+                user_id = get_validated_input(
+                    "Roblox User ID: ",
+                    validate_user_id,
+                    error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
+                )
+        else:
+            user_id = get_validated_input(
+                "Roblox User ID: ",
+                validate_user_id,
+                error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
+            )
 
     check_interval = get_validated_input(
         f"Check Interval (seconds, default {DEFAULT_CHECK_INTERVAL}): ",
