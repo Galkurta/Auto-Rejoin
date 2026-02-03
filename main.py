@@ -423,6 +423,10 @@ def main():
                     last_game_name = None
                     last_status = "rejoined"
             else:
+                if not expected_game_id and current_game_id:
+                    expected_game_id = current_game_id
+                    print(f"Tracking Game ID: {expected_game_id[:12]}...")
+
                 status = (
                     "In-Game"
                     if (
