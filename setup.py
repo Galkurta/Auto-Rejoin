@@ -38,10 +38,17 @@ def get_latest_log_file() -> Optional[str]:
     ]
     
     for log_dir in log_dirs:
-        success, output = run_shell_cmd(f"ls -t {log_dir}/*.log 2>/dev/null | head -1", use_root=True, silent=True)
-        if success and output.strip():
-            log_file = output.strip().split('\n')[0]
-            return log_file
+        success, output = run_shell_cmd(f"test -d {log_dir} && echo 'exists'", use_root=True, silent=True)
+        if success and "exists" in output:
+            print(f"Log directory exists: {log_dir}")
+            success, output = run_shell_cmd(f"ls -t {log_dir}/*.log 2>/dev/null | head -1", use_root=True, silent=True)
+            if success and output.strip():
+                log_file = output.strip().split('\n')[0]
+                return log_file
+            else:
+                print(f"No .log files found in {log_dir}")
+        else:
+            print(f"Log directory not found: {log_dir}")
     
     return None
 
@@ -72,16 +79,23 @@ def extract_user_id_from_storage() -> Optional[str]:
     ]
     
     for storage_file in storage_files:
-        success, content = run_shell_cmd(f"cat {storage_file}", use_root=True, silent=True)
-        if success and content:
-            content_bytes = content.encode('utf-8', errors='ignore')
-            
-            user_matches = re.findall(rb'userId["\s:]+(\d{8,12})', content_bytes)
-            if user_matches:
-                try:
-                    return user_matches[-1].decode('utf-8')
-                except:
-                    pass
+        success, _ = run_shell_cmd(f"test -f {storage_file} && echo 'exists'", use_root=True, silent=True)
+        if success:
+            print(f"Storage file found: {storage_file}")
+            success, content = run_shell_cmd(f"cat {storage_file}", use_root=True, silent=True)
+            if success and content:
+                content_bytes = content.encode('utf-8', errors='ignore')
+                
+                user_matches = re.findall(rb'userId["\s:]+(\d{8,12})', content_bytes)
+                if user_matches:
+                    try:
+                        return user_matches[-1].decode('utf-8')
+                    except:
+                        pass
+                else:
+                    print(f"No userId pattern found in {storage_file}")
+        else:
+            print(f"Storage file not found: {storage_file}")
     
     return None
 
