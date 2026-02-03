@@ -422,6 +422,8 @@ def main():
                     last_game_id = None
                     last_game_name = None
                     last_status = "rejoined"
+                    # Fallback notification
+                    discord.notify_status("Rejoined (Waiting for data...)", None, None)
             else:
                 if not expected_game_id and current_game_id:
                     expected_game_id = current_game_id
