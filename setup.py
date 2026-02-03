@@ -7,20 +7,18 @@ from dotenv import load_dotenv
 
 
 def run_shell_cmd(cmd: str, use_root: bool = True, silent: bool = False) -> Tuple[bool, str]:
-    """Execute shell command with optional root access."""
-    prefix = "su -c " if use_root else ""
-    full_cmd = f"{prefix}{cmd}"
+    """Run shell command with optional root access."""
+    if use_root:
+        cmd = f"su -c '{cmd}'"
     
     try:
-        result = subprocess.run(
-            full_cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
-        return result.returncode == 0, result.stdout + result.stderr
-    except Exception:
+        if silent:
+            subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            return True, ""
+        else:
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            return True, result.stdout
+    except subprocess.CalledProcessError:
         return False, ""
 
 
@@ -30,34 +28,8 @@ def check_root() -> bool:
     return success
 
 
-def get_latest_log_file() -> Optional[str]:
-    """Find the latest Roblox log file."""
-    log_dirs = [
-        "/data/data/com.roblox.client/files/Logs",
-        "/sdcard/Android/data/com.roblox.client/files/Logs",
-    ]
-    
-    for log_dir in log_dirs:
-        success, output = run_shell_cmd(f"test -d {log_dir} && echo 'exists'", use_root=True, silent=True)
-        if success and "exists" in output:
-            print(f"Log directory exists: {log_dir}")
-            success, output = run_shell_cmd(f"ls -t {log_dir}/*.log 2>/dev/null | head -1", use_root=True, silent=True)
-            if success and output.strip():
-                log_file = output.strip().split('\n')[0]
-                return log_file
-            else:
-                print(f"No .log files found in {log_dir}")
-        else:
-            print(f"Log directory not found: {log_dir}")
-    
-    return None
-
-
-def extract_user_id_from_log(log_path: Optional[str]) -> Optional[str]:
+def extract_user_id_from_log(log_path: str) -> Optional[str]:
     """Extract user ID from Roblox log file."""
-    if not log_path:
-        return None
-    
     pattern = r'"userId"\s*:\s*(\d+)'
     
     success, content = run_shell_cmd(f"cat {log_path}", use_root=True, silent=True)
@@ -71,32 +43,43 @@ def extract_user_id_from_log(log_path: Optional[str]) -> Optional[str]:
     return None
 
 
-def extract_user_id_from_storage() -> Optional[str]:
-    """Extract user ID from Roblox storage files."""
-    storage_files = [
-        "/data/data/com.roblox.client/shared/rbx-storage.db",
-        "/data/data/com.roblox.client/shared/rbx-storage.db-wal",
+def find_roblox_package() -> Optional[str]:
+    """Find Roblox package name by searching for installed packages."""
+    success, output = run_shell_cmd("pm list packages | grep roblox", use_root=True, silent=False)
+    if success and output:
+        packages = [line.split(":")[-1] for line in output.strip().split("\n") if line.strip()]
+        if packages:
+            print(f"Found Roblox packages: {', '.join(packages)}")
+            return packages[0]
+    return None
+
+
+def find_log_directory(package_name: str) -> Optional[str]:
+    """Find Roblox log directory."""
+    possible_dirs = [
+        f"/data/data/{package_name}/files/Logs",
+        f"/sdcard/Android/data/{package_name}/files/Logs",
+        f"/data/data/{package_name}/cache/Logs",
     ]
     
-    for storage_file in storage_files:
-        success, _ = run_shell_cmd(f"test -f {storage_file} && echo 'exists'", use_root=True, silent=True)
-        if success:
-            print(f"Storage file found: {storage_file}")
-            success, content = run_shell_cmd(f"cat {storage_file}", use_root=True, silent=True)
-            if success and content:
-                content_bytes = content.encode('utf-8', errors='ignore')
-                
-                user_matches = re.findall(rb'userId["\s:]+(\d{8,12})', content_bytes)
-                if user_matches:
-                    try:
-                        return user_matches[-1].decode('utf-8')
-                    except:
-                        pass
-                else:
-                    print(f"No userId pattern found in {storage_file}")
-        else:
-            print(f"Storage file not found: {storage_file}")
+    for log_dir in possible_dirs:
+        success, output = run_shell_cmd(f"test -d {log_dir} && echo 'exists'", use_root=True, silent=False)
+        if success and "exists" in output:
+            return log_dir
+    return None
+
+
+def find_storage_directory(package_name: str) -> Optional[str]:
+    """Find Roblox storage directory."""
+    possible_dirs = [
+        f"/data/data/{package_name}/shared",
+        f"/data/data/{package_name}/files",
+    ]
     
+    for storage_dir in possible_dirs:
+        success, output = run_shell_cmd(f"test -d {storage_dir} && echo 'exists'", use_root=True, silent=False)
+        if success and "exists" in output:
+            return storage_dir
     return None
 
 
@@ -108,24 +91,56 @@ def auto_extract_user_id() -> Optional[str]:
     
     print("Checking for Roblox app and local files...")
     
-    log_file = get_latest_log_file()
-    if log_file:
-        print(f"Found log file: {log_file}")
+    package_name = find_roblox_package()
+    if not package_name:
+        print("Roblox app not found on device.")
+        print("Please install Roblox first, or enter User ID manually.")
+        return None
+    
+    log_dir = find_log_directory(package_name)
+    if log_dir:
+        print(f"Found log directory: {log_dir}")
+        success, output = run_shell_cmd(f"ls -t {log_dir}/*.log 2>/dev/null | head -1", use_root=True, silent=True)
+        if success and output.strip():
+            log_file = output.strip().split('\n')[0]
+            print(f"Found log file: {log_file}")
+            user_id = extract_user_id_from_log(log_file)
+            if user_id:
+                print(f"User ID extracted: {user_id}")
+                return user_id
+            else:
+                print("No userId pattern found in log file.")
+        else:
+            print(f"No .log files found in {log_dir}")
     else:
-        print("No Roblox log files found.")
+        print("Log directory not found.")
     
-    user_id = extract_user_id_from_log(log_file)
-    
-    if not user_id:
-        print("User ID not found in logs, checking storage files...")
-        user_id = extract_user_id_from_storage()
-    
-    if user_id:
-        print(f"User ID extracted: {user_id}")
+    storage_dir = find_storage_directory(package_name)
+    if storage_dir:
+        print(f"Found storage directory: {storage_dir}")
+        success, output = run_shell_cmd(f"ls {storage_dir}/*.db* 2>/dev/null | head -5", use_root=True, silent=True)
+        if success and output.strip():
+            print(f"Checking storage files...")
+            for line in output.strip().split("\n"):
+                storage_file = line.strip()
+                if storage_file:
+                    print(f"Checking: {storage_file}")
+                    success, content = run_shell_cmd(f"cat {storage_file}", use_root=True, silent=True)
+                    if success and content:
+                        content_bytes = content.encode('utf-8', errors='ignore')
+                        user_matches = re.findall(rb'userId["\s:]+(\d{8,12})', content_bytes)
+                        if user_matches:
+                            user_id = user_matches[-1].decode('utf-8')
+                            print(f"User ID extracted: {user_id}")
+                            return user_id
+        else:
+            print("No storage database files found.")
     else:
-        print("User ID not found in local files.")
+        print("Storage directory not found.")
     
-    return user_id
+    print("User ID not found in local files.")
+    print("You may need to run Roblox at least once to generate log files.")
+    return None
 
 DEFAULT_CHECK_INTERVAL = 30
 DEFAULT_RESTART_DELAY = 15
