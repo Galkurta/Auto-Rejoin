@@ -26,11 +26,8 @@ def run_shell_cmd(cmd: str, use_root: bool = True, silent: bool = False) -> Tupl
 
 def check_root() -> bool:
     """Check if root access is available."""
-    success, _ = run_shell_cmd("id -u", use_root=False)
-    if success:
-        success, output = run_shell_cmd("id -u", use_root=False)
-        return output.strip() == "0"
-    return False
+    success, _ = run_shell_cmd("su -c id", use_root=False)
+    return success
 
 
 def get_latest_log_file() -> Optional[str]:
@@ -92,13 +89,27 @@ def extract_user_id_from_storage() -> Optional[str]:
 def auto_extract_user_id() -> Optional[str]:
     """Automatically extract User ID from Roblox app local files."""
     if not check_root():
+        print("Root access not available. Cannot auto-detect User ID.")
         return None
     
+    print("Checking for Roblox app and local files...")
+    
     log_file = get_latest_log_file()
+    if log_file:
+        print(f"Found log file: {log_file}")
+    else:
+        print("No Roblox log files found.")
+    
     user_id = extract_user_id_from_log(log_file)
     
     if not user_id:
+        print("User ID not found in logs, checking storage files...")
         user_id = extract_user_id_from_storage()
+    
+    if user_id:
+        print(f"User ID extracted: {user_id}")
+    else:
+        print("User ID not found in local files.")
     
     return user_id
 
