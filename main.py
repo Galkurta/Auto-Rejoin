@@ -14,7 +14,7 @@ ROBLOX_PACKAGE = "com.roblox.client"
 class DiscordNotifier:
     def __init__(self, user_id):
         self.webhook_url = os.getenv("DISCORD_WEBHOOK_URL", "")
-        self.webhook_name = os.getenv("DISCORD_WEBHOOK_NAME", "Auto Rejoin Bot (Android)")
+        self.webhook_name = os.getenv("DISCORD_WEBHOOK_NAME")
         self.mention_user = os.getenv("DISCORD_MENTION_USER", "").strip()
         self.enabled = (
             os.getenv("DISCORD_ENABLED", "false").lower() == "true"
@@ -72,46 +72,52 @@ class DiscordNotifier:
         if not self.enabled:
             return False
 
+        content_lines = []
+
+        if description:
+             content_lines.append(f"{description}")
+
+        if fields:
+            for field in fields:
+                name = field.get("name", "")
+                value = field.get("value", "")
+                content_lines.append(f"• **{name}:** {value}")
+
+        content_lines.append("")
+        content_lines.append("──────────────────────────────")
+        content_lines.append("")
+
         system_info = self.get_system_info()
+        
+        if self.display_name:
+             content_lines.append(f"• **Account Name:** {self.display_name}")
+        
+        content_lines.append(f"• **CPU Usage:** {system_info['cpu_percent']}%")
+        content_lines.append(f"• **RAM Usage:** {system_info['ram_used_gb']}/{system_info['ram_total_gb']} GB ({system_info['ram_percent']}%)")
 
-        if not fields:
-            fields = []
+        mention = self.format_mention()
+        if mention:
+            content_lines.append(f"\n{mention}")
 
-        fields.append(
-            {
-                "name": "CPU Usage",
-                "value": f"{system_info['cpu_percent']}%",
-                "inline": True,
-            }
-        )
-        fields.append(
-            {
-                "name": "RAM Usage",
-                "value": f"{system_info['ram_used_gb']}/{system_info['ram_total_gb']} GB ({system_info['ram_percent']}%)",
-                "inline": True,
-            }
-        )
+        final_description = "\n".join(content_lines)
 
         embed = {
-            "title": title,
-            "description": description,
+            "title": f"**{title}**", # Bold title for impact
+            "description": final_description,
             "color": color,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "footer": {"text": self.webhook_name},
-            "fields": fields,
+            #"fields": [] # explicitly empty, we moved everything to description
+            "thumbnail": {"url": "https://tr.rbxcdn.com/53eb9b17fe1432a809c73a1ca3434645/150/150/Image/Png"} # Re-adding thumbnail as it looks good in the example
         }
-
+        
         if show_user_info and self.username:
-            embed["author"] = {
+             embed["author"] = {
                 "name": f"{self.display_name} (@{self.username})",
                 "icon_url": self.avatar_url,
             }
 
         payload = {"username": self.webhook_name, "embeds": [embed]}
-
-        mention = self.format_mention()
-        if mention:
-            payload["content"] = mention
 
         try:
             requests.post(self.webhook_url, json=payload, timeout=5)
@@ -136,35 +142,42 @@ class DiscordNotifier:
     def notify_rejoin(self, reason, game_id=None):
         if not self.notify_on_rejoin:
             return
-        description = f"Reason: **{reason}**"
+        
+        # dynamic title based on reason
+        title = f"[ Rejoining ] - {reason}"
+        
+        clean_fields = []
+
         if game_id:
-            game_name = get_game_name(game_id)
-            if game_name:
-                description += f"\nGame: {game_name}"
-            description += f"\nGame ID: `{game_id[:12]}...`"
-        self.send_embed("Rejoining Server", description, 16776960)
+            clean_fields.append({"name": "Target Game ID", "value": f"`{game_id}`"})
+
+        self.send_embed(title, "", 16776960, clean_fields)
 
     def notify_status(self, status, game_id=None, universe_id=None):
         if not self.enabled:
             return
 
-        fields = []
-        if universe_id:
-            game_name = get_game_name(universe_id)
-            if game_name:
-                fields.append({"name": "Game", "value": game_name, "inline": True})
+        title = f"[ {status} ]" 
+        description = "" 
         
-        if game_id:
-            fields.append(
-                {"name": "Game ID", "value": f"`{game_id[:12]}...`", "inline": True}
-            )
+        if universe_id:
+             game_name = get_game_name(universe_id)
+             if game_name:
+                 title = f"[ {status} ] - {game_name}"
 
+        clean_fields = []
+        if game_id:
+             clean_fields.append({"name": "Game ID", "value": f"`{game_id}`"})
+        
+        if universe_id and " - " not in title:
+             game_name = get_game_name(universe_id)
+             if game_name:
+                 clean_fields.append({"name": "Game Name", "value": game_name})
+
+        # Define color based on status
         color = 5025616 if status == "In-Game" else 16776960
 
-        title = "Status Update"
-        description = f"Current status: **{status}**"
-
-        self.send_embed(title, description, color, fields)
+        self.send_embed(title, description, color, clean_fields)
 
     def notify_error(self, error):
         if not self.notify_on_error:
@@ -386,8 +399,6 @@ def main():
 
     expected_game_id = private_game_id
     last_game_id = None
-    last_game_name = None
-    last_status = None
 
     while True:
         try:
@@ -413,15 +424,12 @@ def main():
                     if new_game_name:
                         print(f"Game: {new_game_name}")
                     print()
+                    print()
                     last_game_id = new_game_id
-                    last_game_name = new_game_name
-                    last_status = "In-Game"
                     discord.notify_status("Rejoined", new_game_id, new_universe_id)
                 else:
                     print("Rejoined (Game ID unavailable)\n")
                     last_game_id = None
-                    last_game_name = None
-                    last_status = "rejoined"
                     # Fallback notification
                     discord.notify_status("Rejoined (Waiting for data...)", None, None)
             else:
@@ -442,8 +450,6 @@ def main():
                 if current_game_id and current_game_id != last_game_id:
                     game_name = get_game_name(universe_id)
                     last_game_id = current_game_id
-                    last_game_name = game_name
-                    last_status = status
                     print(f"{status}")
                     if game_name:
                         print(f"Game: {game_name}")
@@ -459,6 +465,7 @@ def main():
             print(f"Error: {error_msg}")
             discord.notify_error(error_msg)
             time.sleep(5)
+
 
 
 if __name__ == "__main__":
