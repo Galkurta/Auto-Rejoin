@@ -2,460 +2,12 @@
 import os
 import sqlite3
 import subprocess
-import re
 import requests
+import re
+import tempfile
+from contextlib import contextmanager
 from typing import Optional, Tuple, Dict, List
 from dotenv import load_dotenv
-
-
-def run_shell_cmd(cmd: str, use_root: bool = True, silent: bool = False) -> Tuple[bool, str]:
-    """Run shell command with optional root access."""
-    if use_root:
-        cmd = f"su -c '{cmd}'"
-    
-    try:
-        if silent:
-            subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return True, ""
-        else:
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            return True, result.stdout
-    except subprocess.CalledProcessError:
-        return False, ""
-
-
-def check_root() -> bool:
-    """Check if root access is available."""
-    success, _ = run_shell_cmd("su -c id", use_root=False)
-    return success
-
-
-def extract_user_id_from_log(log_path: str) -> Optional[str]:
-    """Extract user ID from Roblox log file."""
-    pattern = r'"userId"\s*:\s*(\d+)'
-    
-    success, content = run_shell_cmd(f"cat {log_path}", use_root=True, silent=True)
-    if not success or not content:
-        return None
-    
-    matches = re.findall(pattern, content)
-    if matches:
-        return matches[-1] if len(matches) > 1 else matches[0]
-    
-    return None
-
-
-def find_roblox_package() -> Optional[str]:
-    """Find Roblox package name by searching for installed packages."""
-    success, output = run_shell_cmd("pm list packages | grep roblox", use_root=True, silent=False)
-    if success and output:
-        packages = [line.split(":")[-1] for line in output.strip().split("\n") if line.strip()]
-        if packages:
-            print(f"Found Roblox packages: {', '.join(packages)}")
-            return packages[0]
-    return None
-
-
-def find_log_directory(package_name: str) -> Optional[str]:
-    """Find Roblox log directory."""
-    possible_dirs = [
-        f"/data/data/{package_name}/files/Logs",
-        f"/sdcard/Android/data/{package_name}/files/Logs",
-        f"/data/data/{package_name}/cache/Logs",
-    ]
-    
-    for log_dir in possible_dirs:
-        success, output = run_shell_cmd(f"test -d {log_dir} && echo 'exists'", use_root=True, silent=False)
-        if success and "exists" in output:
-            return log_dir
-    return None
-
-
-def find_storage_directory(package_name: str) -> Optional[str]:
-    """Find Roblox storage directory."""
-    possible_dirs = [
-        f"/data/data/{package_name}/shared",
-        f"/data/data/{package_name}/files",
-    ]
-    
-    for storage_dir in possible_dirs:
-        success, output = run_shell_cmd(f"test -d {storage_dir} && echo 'exists'", use_root=True, silent=False)
-        if success and "exists" in output:
-            return storage_dir
-    return None
-
-
-def extract_user_id_from_cookie(cookie: str) -> Optional[str]:
-    """Extract User ID from Roblox cookie using API."""
-    try:
-        url = "https://users.roblox.com/v1/users/authenticated"
-        headers = {
-            "Cookie": f".ROBLOSECURITY={cookie}",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            return str(data.get("id"))
-        elif response.status_code == 401:
-            print("Error: Cookie appears to be invalid or expired")
-    except Exception as e:
-        print(f"Error fetching user info: {e}")
-    return None
-
-
-def find_cookie_databases(package_name: str) -> List[str]:
-    """Find cookie database files for a given package."""
-    base_path = f"/data/data/{package_name}"
-    possible_paths = [
-        f"{base_path}/app_chrome/Default/Cookies",
-        f"{base_path}/app_chrome/Profile */Cookies",
-        f"{base_path}/app_msedge/Default/Cookies",
-        f"{base_path}/databases/webviewCookiesChromium.db",
-        f"{base_path}/app_webview/Cookies",
-        f"{base_path}/app_webview/Default/Cookies",
-    ]
-    
-    if "firefox" in package_name:
-        success, output = run_shell_cmd(f'find {base_path} -name "cookies.sqlite" 2>/dev/null', use_root=True, silent=False)
-        if success and output:
-            return [p.strip() for p in output.split("\n") if p.strip()]
-    
-    found_paths = []
-    for path in possible_paths:
-        if "*" in path:
-            success, output = run_shell_cmd(f"ls {path} 2>/dev/null", use_root=True, silent=False)
-            if success and output:
-                for line in output.split("\n"):
-                    if line.strip():
-                        found_paths.append(line.strip())
-        else:
-            success, _ = run_shell_cmd(f'test -f {path} && echo "exists"', use_root=True, silent=False)
-            if success:
-                found_paths.append(path)
-    
-    return found_paths
-
-
-def copy_database(db_path: str, temp_path: str) -> bool:
-    """Copy database file to accessible location."""
-    try:
-        success, _ = run_shell_cmd(f'cp "{db_path}" "{temp_path}"', use_root=True, silent=False)
-        if not success:
-            return False
-        run_shell_cmd(f'chmod 666 "{temp_path}"', use_root=True, silent=False)
-        return True
-    except:
-        return False
-
-
-def extract_cookie_chromium(db_path: str) -> Optional[str]:
-    """Extract Roblox cookie from Chromium-based browser database."""
-    temp_db = "/sdcard/temp_cookies_chromium.db"
-    try:
-        if not copy_database(db_path, temp_db):
-            return None
-        
-        conn = sqlite3.connect(temp_db)
-        cursor = conn.cursor()
-        
-        try:
-            cursor.execute("""
-                SELECT name, value, host_key 
-                FROM cookies 
-                WHERE (host_key LIKE '%roblox.com%' OR host_key LIKE '%www.roblox.com%')
-                AND name = '.ROBLOSECURITY'
-            """)
-            result = cursor.fetchone()
-        except:
-            try:
-                cursor.execute("""
-                    SELECT name, value 
-                    FROM cookies 
-                    WHERE name = '.ROBLOSECURITY'
-                """)
-                result = cursor.fetchone()
-            except:
-                result = None
-        
-        conn.close()
-        
-        if os.path.exists(temp_db):
-            os.remove(temp_db)
-        
-        if result:
-            return result[1] if len(result) > 1 else result[0]
-        
-        return None
-    except Exception as e:
-        if os.path.exists(temp_db):
-            os.remove(temp_db)
-        return None
-
-
-def extract_cookie_firefox(db_path: str) -> Optional[str]:
-    """Extract Roblox cookie from Firefox database."""
-    temp_db = "/sdcard/temp_cookies_firefox.db"
-    try:
-        if not copy_database(db_path, temp_db):
-            return None
-        
-        conn = sqlite3.connect(temp_db)
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT name, value, host 
-            FROM moz_cookies 
-            WHERE host LIKE '%roblox.com%' 
-            AND name = '.ROBLOSECURITY'
-        """)
-        result = cursor.fetchone()
-        conn.close()
-        
-        if os.path.exists(temp_db):
-            os.remove(temp_db)
-        
-        if result:
-            return result[1]
-        
-        return None
-    except Exception as e:
-        if os.path.exists(temp_db):
-            os.remove(temp_db)
-        return None
-
-
-def get_all_installed_browsers() -> Dict[str, str]:
-    """Get all installed supported browsers and apps."""
-    browsers = {
-        "Chrome": "com.android.chrome",
-        "Chrome Beta": "com.chrome.beta",
-        "Chrome Dev": "com.chrome.dev",
-        "Chrome Canary": "com.chrome.canary",
-        "Edge": "com.microsoft.emmx",
-        "Firefox": "org.mozilla.firefox",
-        "Opera": "com.opera.browser",
-        "Samsung Internet": "com.sec.android.app.sbrowser",
-        "Brave": "com.brave.browser",
-        "Kiwi Browser": "com.kiwibrowser.browser",
-        "DuckDuckGo": "com.duckduckgo.mobile.android",
-        "Roblox App": "com.roblox.client",
-    }
-    
-    installed = {}
-    for name, package in browsers.items():
-        success, output = run_shell_cmd(f"pm list packages | grep {package}", use_root=True, silent=False)
-        if success and package in output:
-            installed[name] = package
-    
-    return installed
-
-
-def auto_extract_cookie() -> Optional[str]:
-    """Automatically extract Roblox cookie from available sources."""
-    if not check_root():
-        print("Root access required for auto cookie extraction")
-        print("You'll need to enter cookie manually\n")
-        return None
-    
-    print("Attempting to extract cookie automatically...")
-    
-    installed_browsers = get_all_installed_browsers()
-    if not installed_browsers:
-        print("No supported browsers/apps found for auto extraction")
-        print("You'll need to enter cookie manually\n")
-        return None
-    
-    cookie_found = False
-    cookie_value = None
-    found_in = None
-    
-    for browser_name, package_name in installed_browsers.items():
-        print(f"Checking {browser_name} for cookie...")
-        
-        db_paths = find_cookie_databases(package_name)
-        if not db_paths:
-            continue
-        
-        for db_path in db_paths:
-            if "firefox" in package_name:
-                cookie = extract_cookie_firefox(db_path)
-            else:
-                cookie = extract_cookie_chromium(db_path)
-            
-            if cookie:
-                cookie_value = cookie
-                cookie_found = True
-                found_in = browser_name
-                print(f"Cookie found in {browser_name}!")
-                break
-        
-        if cookie_found:
-            break
-    
-    if cookie_found and cookie_value:
-        print(f"Cookie extracted successfully ({len(cookie_value)} characters)\n")
-        return cookie_value
-    
-    print("Cookie not found automatically")
-    print("You'll need to enter cookie manually\n")
-    return None
-
-
-def find_user_id_databases(package_name: str) -> List[str]:
-    """Find database files that might contain User ID for Roblox app."""
-    base_path = f"/data/data/{package_name}"
-    possible_paths = [
-        f"{base_path}/files/*.db",
-        f"{base_path}/files/*.sqlite",
-        f"{base_path}/files/*.sqlite3",
-        f"{base_path}/databases/*.db",
-        f"{base_path}/databases/*.sqlite",
-        f"{base_path}/databases/*.sqlite3",
-        f"{base_path}/shared_prefs/*.xml",
-    ]
-    
-    found_paths = []
-    for path in possible_paths:
-        success, output = run_shell_cmd(f"ls {path} 2>/dev/null", use_root=True, silent=False)
-        if success and output:
-            for line in output.split("\n"):
-                if line.strip():
-                    found_paths.append(line.strip())
-    
-    return found_paths
-
-
-def extract_user_id_from_database(db_path: str) -> Optional[str]:
-    """Extract User ID from a database file using SQLite."""
-    temp_db = "/sdcard/temp_user_id.db"
-    
-    if not db_path.endswith(('.db', '.sqlite', '.sqlite3')):
-        return None
-    
-    try:
-        if not copy_database(db_path, temp_db):
-            return None
-        
-        conn = sqlite3.connect(temp_db)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-        tables = [row[0] for row in cursor.fetchall()]
-        
-        for table in tables:
-            try:
-                cursor.execute(f"PRAGMA table_info({table});")
-                columns = [row[1] for row in cursor.fetchall()]
-                
-                user_id_columns = [col for col in columns if 'user' in col.lower() and 'id' in col.lower()]
-                
-                for col in user_id_columns:
-                    try:
-                        cursor.execute(f"SELECT DISTINCT {col} FROM {table} WHERE {col} IS NOT NULL AND {col} != '' LIMIT 10;")
-                        results = cursor.fetchall()
-                        
-                        for row in results:
-                            value = str(row[0]) if row[0] else ""
-                            if value.isdigit() and 8 <= len(value) <= 12:
-                                conn.close()
-                                if os.path.exists(temp_db):
-                                    os.remove(temp_db)
-                                return value
-                    except:
-                        continue
-            except:
-                continue
-        
-        conn.close()
-        
-        if os.path.exists(temp_db):
-            os.remove(temp_db)
-        
-        return None
-    except:
-        if os.path.exists(temp_db):
-            os.remove(temp_db)
-        return None
-
-
-def extract_user_id_from_xml(xml_path: str) -> Optional[str]:
-    """Extract User ID from XML shared preferences file."""
-    try:
-        success, content = run_shell_cmd(f"cat {xml_path}", use_root=True, silent=True)
-        if not success or not content:
-            return None
-        
-        content_bytes = content.encode('utf-8', errors='ignore')
-        
-        patterns = [
-            rb'name="user_id"[^>]*value="(\d+)"',
-            rb'name="userId"[^>]*value="(\d+)"',
-            rb'name="userid"[^>]*value="(\d+)"',
-            rb'<user_id>(\d+)</user_id>',
-            rb'<userId>(\d+)</userId>',
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, content_bytes)
-            if matches:
-                for match in matches:
-                    value = match.decode('utf-8')
-                    if value.isdigit() and 8 <= len(value) <= 12:
-                        return value
-        
-        return None
-    except:
-        return None
-
-
-def auto_extract_user_id() -> Optional[str]:
-    """Automatically extract User ID from Roblox app local files or cookie."""
-    print("Checking for Roblox app and local files...")
-    
-    package_name = find_roblox_package()
-    if package_name:
-        log_dir = find_log_directory(package_name)
-        if log_dir:
-            print(f"Found log directory: {log_dir}")
-            success, output = run_shell_cmd(f"ls -t {log_dir}/*.log 2>/dev/null | head -1", use_root=True, silent=True)
-            if success and output.strip():
-                log_file = output.strip().split('\n')[0]
-                print(f"Found log file: {log_file}")
-                user_id = extract_user_id_from_log(log_file)
-                if user_id:
-                    print(f"User ID extracted: {user_id}")
-                    return user_id
-                else:
-                    print("No userId pattern found in log file.")
-            else:
-                print(f"No .log files found in {log_dir}")
-        else:
-            print("Log directory not found.")
-        
-        db_files = find_user_id_databases(package_name)
-        if db_files:
-            print(f"Found {len(db_files)} potential database/storage files...")
-            
-            for db_path in db_files[:10]:
-                filename = os.path.basename(db_path)
-                print(f"Checking: {filename}")
-                
-                if db_path.endswith('.xml'):
-                    user_id = extract_user_id_from_xml(db_path)
-                else:
-                    user_id = extract_user_id_from_database(db_path)
-                
-                if user_id:
-                    print(f"User ID extracted from {filename}: {user_id}")
-                    return user_id
-            
-            print("User ID not found in database files.")
-        else:
-            print("No database/storage files found.")
-    
-    print("User ID not found in local files.")
-    print("You may need to run Roblox at least once to generate log files.")
-    return None
 
 DEFAULT_CHECK_INTERVAL = 30
 DEFAULT_RESTART_DELAY = 15
@@ -464,6 +16,14 @@ DEFAULT_DISCORD_BOT_NAME = "Auto Rejoin Bot"
 PACKAGES = {
     "Roblox App": "com.roblox.client",
 }
+
+WEBVIEW_COOKIE_PATHS = [
+    "databases/webviewCookiesChromium.db",
+    "app_webview/Cookies",
+    "app_webview/Default/Cookies",
+]
+
+ROBLOX_COOKIE_NAME = ".ROBLOSECURITY"
 
 
 def validate_url(url: str) -> bool:
@@ -521,6 +81,46 @@ def get_yes_no_input(prompt: str, default: bool = True) -> bool:
     return user_input != "n"
 
 
+@contextmanager
+def temp_database_path(suffix: str = ".db"):
+    """Context manager for temporary database files."""
+    temp_file = None
+    try:
+        temp_file = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+        temp_path = temp_file.name
+        temp_file.close()
+        yield temp_path
+    finally:
+        if temp_file and os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+
+def check_root() -> bool:
+    """Check if the script has root access via su."""
+    try:
+        result = subprocess.run(["su", "-c", "id"], capture_output=True, timeout=5)
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
+        return False
+
+
+def run_shell_cmd(cmd_str: str) -> Tuple[bool, str]:
+    """Execute a shell command with root privileges."""
+    try:
+        result = subprocess.run(
+            ["su", "-c", cmd_str], capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            return True, result.stdout.strip()
+        else:
+            return False, result.stderr.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, OSError) as e:
+        return False, str(e)
+
+
 def check_package_installed(package_name):
     success, output = run_shell_cmd(f"pm list packages | grep {package_name}")
     return success and package_name in output
@@ -537,6 +137,135 @@ def find_installed_app() -> Dict[str, str]:
     return installed
 
 
+def find_cookie_databases(package_name: str) -> List[str]:
+    """Find cookie database files for Roblox app WebView."""
+    base_path = f"/data/data/{package_name}"
+    found_paths = []
+
+    for path in WEBVIEW_COOKIE_PATHS:
+        full_path = f"{base_path}/{path}"
+        if "*" in full_path:
+            success, output = run_shell_cmd(f"ls {full_path} 2>/dev/null")
+            if success and output:
+                for line in output.split("\n"):
+                    if line.strip():
+                        found_paths.append(line.strip())
+        else:
+            success, _ = run_shell_cmd(f'test -f {full_path} && echo "exists"')
+            if success:
+                found_paths.append(full_path)
+
+    return found_paths
+
+
+def copy_database(db_path: str, temp_path: str) -> bool:
+    """Copy database file from protected path to accessible location."""
+    try:
+        success, _ = run_shell_cmd(f'cp "{db_path}" "{temp_path}"')
+        if not success:
+            return False
+        run_shell_cmd(f'chmod 666 "{temp_path}"')
+        return True
+    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, OSError):
+        return False
+
+
+def extract_cookie_from_webview(db_path: str) -> Optional[str]:
+    """Extract Roblox cookie from Roblox app WebView database."""
+    with temp_database_path("_cookies_webview.db") as temp_db:
+        if not copy_database(db_path, temp_db):
+            return None
+
+        try:
+            conn = sqlite3.connect(temp_db)
+            cursor = conn.cursor()
+
+            try:
+                cursor.execute("""
+                    SELECT name, value, host_key 
+                    FROM cookies 
+                    WHERE (host_key LIKE '%roblox.com%' OR host_key LIKE '%www.roblox.com%')
+                    AND name = ?
+                """, (ROBLOX_COOKIE_NAME,))
+                result = cursor.fetchone()
+            except sqlite3.OperationalError:
+                cursor.execute("""
+                    SELECT name, value 
+                    FROM cookies 
+                    WHERE name = ?
+                """, (ROBLOX_COOKIE_NAME,))
+                result = cursor.fetchone()
+
+            conn.close()
+
+            if result:
+                return result[1] if len(result) > 1 else result[0]
+            return None
+        except (sqlite3.Error, OSError, IndexError):
+            return None
+
+
+def auto_extract_cookie() -> Optional[str]:
+    """Automatically extract Roblox cookie from Roblox app."""
+    if not check_root():
+        print("Root access required for auto cookie extraction")
+        print("You'll need to enter cookie manually\n")
+        return None
+
+    installed_apps = find_installed_app()
+
+    if not installed_apps:
+        print("Roblox app not found for auto extraction")
+        print("You'll need to enter cookie manually\n")
+        return None
+
+    for app_name, package_name in installed_apps.items():
+        print(f"Checking {app_name} for cookie...")
+
+        db_paths = find_cookie_databases(package_name)
+
+        if not db_paths:
+            continue
+
+        for db_path in db_paths:
+            cookie = extract_cookie_from_webview(db_path)
+
+            if cookie:
+                print(f"Cookie found in {app_name}!")
+                print(f"Cookie extracted successfully ({len(cookie)} characters)\n")
+                return cookie
+
+    print("Cookie not found automatically")
+    print("You'll need to enter cookie manually\n")
+    return None
+
+
+def get_roblox_user_info(cookie: str) -> Tuple[Optional[int], Optional[str]]:
+    """Fetch Roblox user information using the provided cookie."""
+    try:
+        url = "https://users.roblox.com/v1/users/authenticated"
+        headers = {
+            "Cookie": f".ROBLOSECURITY={cookie}",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("id"), data.get("name")
+        elif response.status_code == 401:
+            print(f"Error: Cookie appears to be invalid or expired (Status 401)")
+        else:
+            print(f"Error: Failed to fetch user info (Status {response.status_code})")
+        return None, None
+    except (requests.RequestException, requests.Timeout, requests.ConnectionError) as e:
+        print(f"Error fetching user info: {e}")
+        return None, None
+    except (ValueError, KeyError) as e:
+        print(f"Error parsing user info response: {e}")
+        return None, None
+
+
 def setup() -> None:
     """Run the interactive setup wizard for Auto Rejoin configuration."""
     print("\nAuto Rejoin Setup")
@@ -551,21 +280,41 @@ def setup() -> None:
 
     print("Enter the following information:\n")
 
+    print("Roblox Cookie:")
+    if get_yes_no_input("Auto-extract cookie from Roblox app?", True):
+        roblox_cookie = auto_extract_cookie()
+    else:
+        roblox_cookie = None
+
+    if not roblox_cookie:
+        roblox_cookie = get_validated_input(
+            "Roblox Cookie (.ROBLOSECURITY): ",
+            lambda x: len(x) > 10,
+            error_msg="Cookie appears to be too short. Please enter a valid cookie."
+        )
+
+    fetched_user_id = None
+    fetched_username = None
+
+    if roblox_cookie:
+        print("\nVerifying cookie and fetching User ID...")
+        fetched_user_id, fetched_username = get_roblox_user_info(roblox_cookie)
+        if fetched_user_id:
+            print(f"Success! Logged in as: {fetched_username} (ID: {fetched_user_id})")
+        else:
+            print("Could not fetch User ID automatically.")
+
+    print("")
+
     ps_link = get_validated_input(
         "Private Server Link: ",
         validate_url,
         error_msg="Invalid URL format. Please enter a valid Roblox private server link."
     )
 
-    print("")
-
-    print("Roblox User ID:")
-    auto_user_id = auto_extract_user_id()
-    
-    if auto_user_id:
-        print(f"Auto-detected User ID: {auto_user_id}")
-        if get_yes_no_input("Use this User ID?", True):
-            user_id = auto_user_id
+    if fetched_user_id:
+        if get_yes_no_input(f"Use User ID {fetched_user_id} ({fetched_username})?", True):
+            user_id = str(fetched_user_id)
         else:
             user_id = get_validated_input(
                 "Roblox User ID: ",
@@ -573,69 +322,11 @@ def setup() -> None:
                 error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
             )
     else:
-        auto_cookie = auto_extract_cookie()
-        if auto_cookie:
-            print("Fetching User ID from auto-extracted cookie...")
-            user_id = extract_user_id_from_cookie(auto_cookie)
-            if user_id:
-                print(f"User ID retrieved: {user_id}")
-            else:
-                print("Failed to get User ID from auto-extracted cookie.")
-                use_cookie = get_yes_no_input("Enter cookie manually?", False)
-                if use_cookie:
-                    cookie = input("Enter your Roblox cookie (.ROBLOSECURITY): ").strip()
-                    if cookie:
-                        print("Fetching User ID from cookie...")
-                        user_id = extract_user_id_from_cookie(cookie)
-                        if user_id:
-                            print(f"User ID retrieved: {user_id}")
-                        else:
-                            print("Failed to get User ID from cookie. Please enter manually.")
-                            user_id = get_validated_input(
-                                "Roblox User ID: ",
-                                validate_user_id,
-                                error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
-                            )
-                    else:
-                        user_id = get_validated_input(
-                            "Roblox User ID: ",
-                            validate_user_id,
-                            error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
-                        )
-                else:
-                    user_id = get_validated_input(
-                        "Roblox User ID: ",
-                        validate_user_id,
-                        error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
-                    )
-        else:
-            use_cookie = get_yes_no_input("Enter cookie manually to get User ID? (Cookie will NOT be saved)", False)
-            if use_cookie:
-                cookie = input("Enter your Roblox cookie (.ROBLOSECURITY): ").strip()
-                if cookie:
-                    print("Fetching User ID from cookie...")
-                    user_id = extract_user_id_from_cookie(cookie)
-                    if user_id:
-                        print(f"User ID retrieved: {user_id}")
-                    else:
-                        print("Failed to get User ID from cookie. Please enter manually.")
-                        user_id = get_validated_input(
-                            "Roblox User ID: ",
-                            validate_user_id,
-                            error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
-                        )
-                else:
-                    user_id = get_validated_input(
-                        "Roblox User ID: ",
-                        validate_user_id,
-                        error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
-                    )
-            else:
-                user_id = get_validated_input(
-                    "Roblox User ID: ",
-                    validate_user_id,
-                    error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
-                )
+        user_id = get_validated_input(
+            "Roblox User ID: ",
+            validate_user_id,
+            error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
+        )
 
     check_interval = get_validated_input(
         f"Check Interval (seconds, default {DEFAULT_CHECK_INTERVAL}): ",
@@ -696,6 +387,7 @@ def setup() -> None:
 USER_ID={user_id}
 CHECK_INTERVAL={check_interval}
 RESTART_DELAY={restart_delay}
+ROBLOX_COOKIE={roblox_cookie}
 DISCORD_WEBHOOK_URL={discord_webhook}
 DISCORD_WEBHOOK_NAME={discord_webhook_name}
 DISCORD_MENTION_USER={discord_mention_user}

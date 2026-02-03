@@ -1,9 +1,7 @@
 import os
-import re
 import time
 import subprocess
 import requests
-import sqlite3
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import psutil
@@ -284,205 +282,40 @@ def get_game_name(universe_id):
     return None
 
 
-def copy_database(db_path, temp_path):
-    """Copy database file to accessible location."""
+def check_user_presence(user_id, roblox_cookie=None):
+    url = "https://presence.roblox.com/v1/presence/users"
+    payload = {"userIds": [user_id]}
+    headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
+
+    cookies = {}
+    if roblox_cookie:
+        cookies[".ROBLOSECURITY"] = roblox_cookie
+
     try:
-        success, _ = run_shell_cmd(f'cp "{db_path}" "{temp_path}"', use_root=True, silent=True)
-        if not success:
-            return False
-        run_shell_cmd(f'chmod 666 "{temp_path}"', use_root=True, silent=True)
-        return True
-    except:
-        return False
+        r = requests.post(
+            url, json=payload, headers=headers, cookies=cookies, timeout=10
+        )
+        if r.status_code == 200:
+            data = r.json()
+            user_presences = data.get("userPresences", [])
+            if user_presences:
+                presence = user_presences[0]
+                presence_type = presence.get("userPresenceType")
+                game_id = presence.get("gameId")
+                universe_id = presence.get("universeId")
+                is_ingame = presence_type == 2
+                return is_ingame, game_id, universe_id
+    except Exception as e:
+        pass
+
+    return True, None, None
 
 
-def get_latest_log_file():
-    log_dirs = [
-        "/data/data/com.roblox.client/files/Logs",
-        "/data/data/com.roblox.client/cache",
-    ]
-    
-    for log_dir in log_dirs:
-        success, output = run_shell_cmd(f"ls -t {log_dir}/*.log 2>/dev/null | head -1", use_root=True, silent=True)
-        if success and output:
-            return output
-    return None
-
-
-def extract_ids_from_log(log_path):
-    if not log_path:
-        return None, None, None, None
-    
-    patterns = {
-        "place_id": r'"placeId"\s*:\s*(\d+)',
-        "universe_id": r'"universeId"\s*:\s*(\d+)',
-        "game_id": r'"gameId"\s*:\s*"([a-f0-9-]+)"',
-        "job_id": r'"jobId"\s*:\s*"([a-f0-9-]+)"',
-        "user_id": r'"userId"\s*:\s*(\d+)',
-        "place_name": r'"placeName"\s*:\s*"([^"]+)"',
-    }
-    
-    success, content = run_shell_cmd(f"cat {log_path}", use_root=True, silent=True)
-    if not success or not content:
-        return None, None, None, None
-    
-    place_id = None
-    universe_id = None
-    job_id = None
-    user_id = None
-    
-    for pattern_name, pattern in patterns.items():
-        matches = re.findall(pattern, content)
-        if matches:
-            if pattern_name == "place_id":
-                place_id = matches[-1] if len(matches) > 1 else matches[0]
-            elif pattern_name == "universe_id":
-                universe_id = matches[-1] if len(matches) > 1 else matches[0]
-            elif pattern_name == "job_id":
-                job_id = matches[-1] if len(matches) > 1 else matches[0]
-            elif pattern_name == "user_id":
-                user_id = matches[-1] if len(matches) > 1 else matches[0]
-    
-    return place_id, universe_id, job_id, user_id
-
-
-def extract_ids_from_storage():
-    storage_files = [
-        "/data/data/com.roblox.client/shared/rbx-storage.db",
-        "/data/data/com.roblox.client/databases/rbx-storage.db",
-        "/data/data/com.roblox.client/files/rbx-storage.db",
-    ]
-    
-    temp_db = "/sdcard/temp_rbx_storage.db"
-    
-    for storage_file in storage_files:
-        success, _ = run_shell_cmd(f'test -f {storage_file} && echo "exists"', use_root=True, silent=True)
-        if not success:
-            continue
-        
-        if not copy_database(storage_file, temp_db):
-            continue
-        
-        try:
-            conn = sqlite3.connect(temp_db)
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-            tables = [row[0] for row in cursor.fetchall()]
-            
-            place_id = None
-            universe_id = None
-            job_id = None
-            user_id = None
-            
-            for table in tables:
-                try:
-                    cursor.execute(f"PRAGMA table_info({table});")
-                    columns = [row[1] for row in cursor.fetchall()]
-                    
-                    place_id_col = next((col for col in columns if 'place' in col.lower() and 'id' in col.lower()), None)
-                    universe_id_col = next((col for col in columns if 'universe' in col.lower() and 'id' in col.lower()), None)
-                    job_id_col = next((col for col in columns if 'job' in col.lower() and 'id' in col.lower()), None)
-                    user_id_col = next((col for col in columns if 'user' in col.lower() and 'id' in col.lower()), None)
-                    
-                    if place_id_col:
-                        cursor.execute(f"SELECT {place_id_col} FROM {table} WHERE {place_id_col} IS NOT NULL AND {place_id_col} != '' LIMIT 1;")
-                        result = cursor.fetchone()
-                        if result and result[0]:
-                            place_id = str(result[0])
-                    
-                    if universe_id_col:
-                        cursor.execute(f"SELECT {universe_id_col} FROM {table} WHERE {universe_id_col} IS NOT NULL AND {universe_id_col} != '' LIMIT 1;")
-                        result = cursor.fetchone()
-                        if result and result[0]:
-                            universe_id = str(result[0])
-                    
-                    if job_id_col:
-                        cursor.execute(f"SELECT {job_id_col} FROM {table} WHERE {job_id_col} IS NOT NULL AND {job_id_col} != '' LIMIT 1;")
-                        result = cursor.fetchone()
-                        if result and result[0]:
-                            job_id = str(result[0])
-                    
-                    if user_id_col:
-                        cursor.execute(f"SELECT {user_id_col} FROM {table} WHERE {user_id_col} IS NOT NULL AND {user_id_col} != '' LIMIT 1;")
-                        result = cursor.fetchone()
-                        if result and result[0]:
-                            user_id = str(result[0])
-                    
-                    if place_id and universe_id:
-                        break
-                except:
-                    continue
-            
-            conn.close()
-            
-            if os.path.exists(temp_db):
-                os.remove(temp_db)
-            
-            if place_id and universe_id:
-                return place_id, universe_id, job_id, user_id
-            elif place_id or universe_id:
-                return place_id, universe_id, job_id, user_id
-            
-        except Exception:
-            pass
-        finally:
-            if os.path.exists(temp_db):
-                try:
-                    os.remove(temp_db)
-                except:
-                    pass
-    
-    return None, None, None, None
-
-
-def check_local_game_status():
-    is_running = is_roblox_running()
-    
-    if not is_running:
-        return False, None, None, None, None
-    
-    log_file = get_latest_log_file()
-    place_id, universe_id, job_id, user_id = extract_ids_from_log(log_file)
-    
-    if not place_id or not universe_id:
-        place_id, universe_id, job_id, user_id = extract_ids_from_storage()
-    
-    if place_id or universe_id or job_id or user_id:
-        return True, place_id, universe_id, job_id, user_id
-    
-    return False, None, None, None, None
-
-
-def get_local_game_info():
-    is_ingame, place_id, universe_id, job_id, user_id = check_local_game_status()
-    
-    info = {
-        "is_ingame": is_ingame,
-        "place_id": place_id,
-        "universe_id": universe_id,
-        "job_id": job_id,
-        "user_id": user_id,
-        "source": "local_files"
-    }
-    
-    return info
-
-
-def check_user_presence(user_id):
-    is_ingame, place_id, universe_id, job_id, local_user_id = check_local_game_status()
-    
-    if is_ingame and (place_id or universe_id or job_id):
-        return True, place_id, universe_id
-    
-    return False, None, None
-
-
-def should_rejoin(user_id, expected_game_id):
+def should_rejoin(user_id, expected_game_id, roblox_cookie=None):
     if not is_roblox_running():
         return True, "Process stopped", None, None
 
-    is_ingame, current_game_id, universe_id = check_user_presence(user_id)
+    is_ingame, current_game_id, universe_id = check_user_presence(user_id, roblox_cookie)
 
     if not is_ingame:
         return True, "Not in-game", current_game_id, universe_id
@@ -505,44 +338,7 @@ def print_header():
     print("-" * 50 + "\n")
 
 
-def print_local_game_info():
-    print("\n" + "=" * 50)
-    print("  Local Game Information (Extracted from Files)")
-    print("=" * 50)
-    
-    if not check_root():
-        print("❌ Root access required")
-        return
-    
-    info = get_local_game_info()
-    
-    print(f"\nSource: {info['source']}")
-    print(f"Status: {'In-Game' if info['is_ingame'] else 'Not In-Game'}")
-    
-    if info['place_id']:
-        print(f"Place ID: {info['place_id']}")
-    if info['universe_id']:
-        print(f"Universe ID: {info['universe_id']}")
-    if info['job_id']:
-        print(f"Job ID: {info['job_id']}")
-    if info['user_id']:
-        print(f"User ID: {info['user_id']}")
-    
-    if info['is_ingame'] and info['universe_id']:
-        game_name = get_game_name(info['universe_id'])
-        if game_name:
-            print(f"Game Name: {game_name}")
-    
-    print("=" * 50 + "\n")
-
-
 def main():
-    import sys
-    
-    if len(sys.argv) > 1 and sys.argv[1] == "info":
-        print_local_game_info()
-        return
-    
     if not os.path.exists(".env"):
         print("Error: .env file not found")
         print("Run: python setup.py")
@@ -558,6 +354,7 @@ def main():
     user_id = os.getenv("USER_ID")
     interval = int(os.getenv("CHECK_INTERVAL", "30"))
     restart_delay = int(os.getenv("RESTART_DELAY", "15"))
+    roblox_cookie = os.getenv("ROBLOX_COOKIE")
 
     discord = DiscordNotifier(user_id)
 
@@ -568,38 +365,17 @@ def main():
 
     print(f"Config: User {user_id}, Interval {interval}s")
 
-    if is_roblox_running():
-        print(f"Roblox already running, checking current session...")
-        local_info = get_local_game_info()
-        if local_info['is_ingame']:
-            print(f"Already in-game!")
-            if local_info['place_id']:
-                print(f"Place ID: {local_info['place_id']}")
-            if local_info['universe_id']:
-                print(f"Universe ID: {local_info['universe_id']}")
-            print("Monitoring current session (Ctrl+C to stop)\n")
-        else:
-            print("Roblox running but not in-game, connecting to private server...")
-            if not open_ps_link(ps_link):
-                print("Error: Failed to open Roblox")
-                return
-            print(f"Waiting for game to start...")
-            time.sleep(restart_delay)
-    else:
-        print(f"Starting Roblox and connecting to private server...")
-        if not open_ps_link(ps_link):
-            print("Error: Failed to open Roblox")
-            return
-        print(f"Waiting for game to start...")
-        time.sleep(restart_delay * 2)
+    force_stop_roblox()
+    time.sleep(2)
 
-    local_info = get_local_game_info()
-    if local_info['place_id']:
-        print(f"Place ID: {local_info['place_id']}")
-    if local_info['universe_id']:
-        print(f"Universe ID: {local_info['universe_id']}")
+    if not open_ps_link(ps_link):
+        print("Error: Failed to open Roblox")
+        return
 
-    _, private_game_id, _ = check_user_presence(user_id)
+    print(f"Initializing...")
+    time.sleep(restart_delay * 2)
+
+    _, private_game_id, _ = check_user_presence(user_id, roblox_cookie)
 
     if private_game_id:
         print(f"Game ID: {private_game_id[:12]}...")
@@ -616,7 +392,7 @@ def main():
     while True:
         try:
             needs_rejoin, reason, current_game_id, universe_id = should_rejoin(
-                user_id, expected_game_id
+                user_id, expected_game_id, roblox_cookie
             )
 
             if needs_rejoin:
@@ -629,7 +405,7 @@ def main():
                 open_ps_link(ps_link)
                 time.sleep(restart_delay * 2)
 
-                _, new_game_id, new_universe_id = check_user_presence(user_id)
+                _, new_game_id, new_universe_id = check_user_presence(user_id, roblox_cookie)
                 if new_game_id:
                     expected_game_id = new_game_id
                     new_game_name = get_game_name(new_universe_id)
