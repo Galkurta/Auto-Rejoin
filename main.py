@@ -3,6 +3,7 @@ import re
 import time
 import subprocess
 import requests
+import sqlite3
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import psutil
@@ -283,6 +284,18 @@ def get_game_name(universe_id):
     return None
 
 
+def copy_database(db_path, temp_path):
+    """Copy database file to accessible location."""
+    try:
+        success, _ = run_shell_cmd(f'cp "{db_path}" "{temp_path}"', use_root=True, silent=True)
+        if not success:
+            return False
+        run_shell_cmd(f'chmod 666 "{temp_path}"', use_root=True, silent=True)
+        return True
+    except:
+        return False
+
+
 def get_latest_log_file():
     log_dirs = [
         "/data/data/com.roblox.client/files/Logs",
@@ -336,64 +349,109 @@ def extract_ids_from_log(log_path):
 def extract_ids_from_storage():
     storage_files = [
         "/data/data/com.roblox.client/shared/rbx-storage.db",
-        "/data/data/com.roblox.client/shared/rbx-storage.db-wal",
+        "/data/data/com.roblox.client/databases/rbx-storage.db",
+        "/data/data/com.roblox.client/files/rbx-storage.db",
     ]
     
-    place_id = None
-    universe_id = None
-    job_id = None
-    user_id = None
+    temp_db = "/sdcard/temp_rbx_storage.db"
     
     for storage_file in storage_files:
-        success, content = run_shell_cmd(f"cat {storage_file}", use_root=True, silent=True)
-        if success and content:
-            content_bytes = content.encode('utf-8', errors='ignore')
+        success, _ = run_shell_cmd(f'test -f {storage_file} && echo "exists"', use_root=True, silent=True)
+        if not success:
+            continue
+        
+        if not copy_database(storage_file, temp_db):
+            continue
+        
+        try:
+            conn = sqlite3.connect(temp_db)
+            cursor = conn.cursor()
             
-            place_matches = re.findall(rb'placeId["\s:]+(\d{16,})', content_bytes)
-            if place_matches:
-                try:
-                    place_id = place_matches[-1].decode('utf-8')
-                except:
-                    pass
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = [row[0] for row in cursor.fetchall()]
             
-            universe_matches = re.findall(rb'universeId["\s:]+(\d{9,})', content_bytes)
-            if universe_matches:
-                try:
-                    universe_id = universe_matches[-1].decode('utf-8')
-                except:
-                    pass
+            place_id = None
+            universe_id = None
+            job_id = None
+            user_id = None
             
-            job_matches = re.findall(rb'jobId["\s:]+([a-f0-9-]{36})', content_bytes)
-            if job_matches:
+            for table in tables:
                 try:
-                    job_id = job_matches[-1].decode('utf-8')
+                    cursor.execute(f"PRAGMA table_info({table});")
+                    columns = [row[1] for row in cursor.fetchall()]
+                    
+                    place_id_col = next((col for col in columns if 'place' in col.lower() and 'id' in col.lower()), None)
+                    universe_id_col = next((col for col in columns if 'universe' in col.lower() and 'id' in col.lower()), None)
+                    job_id_col = next((col for col in columns if 'job' in col.lower() and 'id' in col.lower()), None)
+                    user_id_col = next((col for col in columns if 'user' in col.lower() and 'id' in col.lower()), None)
+                    
+                    if place_id_col:
+                        cursor.execute(f"SELECT {place_id_col} FROM {table} WHERE {place_id_col} IS NOT NULL AND {place_id_col} != '' LIMIT 1;")
+                        result = cursor.fetchone()
+                        if result and result[0]:
+                            place_id = str(result[0])
+                    
+                    if universe_id_col:
+                        cursor.execute(f"SELECT {universe_id_col} FROM {table} WHERE {universe_id_col} IS NOT NULL AND {universe_id_col} != '' LIMIT 1;")
+                        result = cursor.fetchone()
+                        if result and result[0]:
+                            universe_id = str(result[0])
+                    
+                    if job_id_col:
+                        cursor.execute(f"SELECT {job_id_col} FROM {table} WHERE {job_id_col} IS NOT NULL AND {job_id_col} != '' LIMIT 1;")
+                        result = cursor.fetchone()
+                        if result and result[0]:
+                            job_id = str(result[0])
+                    
+                    if user_id_col:
+                        cursor.execute(f"SELECT {user_id_col} FROM {table} WHERE {user_id_col} IS NOT NULL AND {user_id_col} != '' LIMIT 1;")
+                        result = cursor.fetchone()
+                        if result and result[0]:
+                            user_id = str(result[0])
+                    
+                    if place_id and universe_id:
+                        break
                 except:
-                    pass
+                    continue
             
-            user_matches = re.findall(rb'userId["\s:]+(\d{8,12})', content_bytes)
-            if user_matches:
-                try:
-                    user_id = user_matches[-1].decode('utf-8')
-                except:
-                    pass
+            conn.close()
+            
+            if os.path.exists(temp_db):
+                os.remove(temp_db)
             
             if place_id and universe_id:
-                break
+                return place_id, universe_id, job_id, user_id
+            elif place_id or universe_id:
+                return place_id, universe_id, job_id, user_id
+            
+        except Exception:
+            pass
+        finally:
+            if os.path.exists(temp_db):
+                try:
+                    os.remove(temp_db)
+                except:
+                    pass
     
-    return place_id, universe_id, job_id, user_id
+    return None, None, None, None
 
 
 def check_local_game_status():
+    is_running = is_roblox_running()
+    
+    if not is_running:
+        return False, None, None, None, None
+    
     log_file = get_latest_log_file()
     place_id, universe_id, job_id, user_id = extract_ids_from_log(log_file)
     
     if not place_id or not universe_id:
         place_id, universe_id, job_id, user_id = extract_ids_from_storage()
     
-    if not place_id or not universe_id:
-        return False, None, None, None, None
+    if place_id or universe_id or job_id or user_id:
+        return True, place_id, universe_id, job_id, user_id
     
-    return True, place_id, universe_id, job_id, user_id
+    return False, None, None, None, None
 
 
 def get_local_game_info():
@@ -414,7 +472,7 @@ def get_local_game_info():
 def check_user_presence(user_id):
     is_ingame, place_id, universe_id, job_id, local_user_id = check_local_game_status()
     
-    if is_ingame and place_id:
+    if is_ingame and (place_id or universe_id or job_id):
         return True, place_id, universe_id
     
     return False, None, None
@@ -510,21 +568,36 @@ def main():
 
     print(f"Config: User {user_id}, Interval {interval}s")
 
-    force_stop_roblox()
-    time.sleep(2)
+    if is_roblox_running():
+        print(f"Roblox already running, checking current session...")
+        local_info = get_local_game_info()
+        if local_info['is_ingame']:
+            print(f"Already in-game!")
+            if local_info['place_id']:
+                print(f"Place ID: {local_info['place_id']}")
+            if local_info['universe_id']:
+                print(f"Universe ID: {local_info['universe_id']}")
+            print("Monitoring current session (Ctrl+C to stop)\n")
+        else:
+            print("Roblox running but not in-game, connecting to private server...")
+            if not open_ps_link(ps_link):
+                print("Error: Failed to open Roblox")
+                return
+            print(f"Waiting for game to start...")
+            time.sleep(restart_delay)
+    else:
+        print(f"Starting Roblox and connecting to private server...")
+        if not open_ps_link(ps_link):
+            print("Error: Failed to open Roblox")
+            return
+        print(f"Waiting for game to start...")
+        time.sleep(restart_delay * 2)
 
-    if not open_ps_link(ps_link):
-        print("Error: Failed to open Roblox")
-        return
-
-    print(f"Initializing...")
-    
     local_info = get_local_game_info()
     if local_info['place_id']:
         print(f"Place ID: {local_info['place_id']}")
     if local_info['universe_id']:
         print(f"Universe ID: {local_info['universe_id']}")
-    time.sleep(restart_delay * 2)
 
     _, private_game_id, _ = check_user_presence(user_id)
 

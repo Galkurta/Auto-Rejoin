@@ -301,6 +301,113 @@ def auto_extract_cookie() -> Optional[str]:
     return None
 
 
+def find_user_id_databases(package_name: str) -> List[str]:
+    """Find database files that might contain User ID for Roblox app."""
+    base_path = f"/data/data/{package_name}"
+    possible_paths = [
+        f"{base_path}/files/*.db",
+        f"{base_path}/files/*.sqlite",
+        f"{base_path}/files/*.sqlite3",
+        f"{base_path}/databases/*.db",
+        f"{base_path}/databases/*.sqlite",
+        f"{base_path}/databases/*.sqlite3",
+        f"{base_path}/shared_prefs/*.xml",
+    ]
+    
+    found_paths = []
+    for path in possible_paths:
+        success, output = run_shell_cmd(f"ls {path} 2>/dev/null", use_root=True, silent=False)
+        if success and output:
+            for line in output.split("\n"):
+                if line.strip():
+                    found_paths.append(line.strip())
+    
+    return found_paths
+
+
+def extract_user_id_from_database(db_path: str) -> Optional[str]:
+    """Extract User ID from a database file using SQLite."""
+    temp_db = "/sdcard/temp_user_id.db"
+    
+    if not db_path.endswith(('.db', '.sqlite', '.sqlite3')):
+        return None
+    
+    try:
+        if not copy_database(db_path, temp_db):
+            return None
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = [row[0] for row in cursor.fetchall()]
+        
+        for table in tables:
+            try:
+                cursor.execute(f"PRAGMA table_info({table});")
+                columns = [row[1] for row in cursor.fetchall()]
+                
+                user_id_columns = [col for col in columns if 'user' in col.lower() and 'id' in col.lower()]
+                
+                for col in user_id_columns:
+                    try:
+                        cursor.execute(f"SELECT DISTINCT {col} FROM {table} WHERE {col} IS NOT NULL AND {col} != '' LIMIT 10;")
+                        results = cursor.fetchall()
+                        
+                        for row in results:
+                            value = str(row[0]) if row[0] else ""
+                            if value.isdigit() and 8 <= len(value) <= 12:
+                                conn.close()
+                                if os.path.exists(temp_db):
+                                    os.remove(temp_db)
+                                return value
+                    except:
+                        continue
+            except:
+                continue
+        
+        conn.close()
+        
+        if os.path.exists(temp_db):
+            os.remove(temp_db)
+        
+        return None
+    except:
+        if os.path.exists(temp_db):
+            os.remove(temp_db)
+        return None
+
+
+def extract_user_id_from_xml(xml_path: str) -> Optional[str]:
+    """Extract User ID from XML shared preferences file."""
+    try:
+        success, content = run_shell_cmd(f"cat {xml_path}", use_root=True, silent=True)
+        if not success or not content:
+            return None
+        
+        content_bytes = content.encode('utf-8', errors='ignore')
+        
+        patterns = [
+            rb'name="user_id"[^>]*value="(\d+)"',
+            rb'name="userId"[^>]*value="(\d+)"',
+            rb'name="userid"[^>]*value="(\d+)"',
+            rb'<user_id>(\d+)</user_id>',
+            rb'<userId>(\d+)</userId>',
+        ]
+        
+        for pattern in patterns:
+            matches = re.findall(pattern, content_bytes)
+            if matches:
+                for match in matches:
+                    value = match.decode('utf-8')
+                    if value.isdigit() and 8 <= len(value) <= 12:
+                        return value
+        
+        return None
+    except:
+        return None
+
+
 def auto_extract_user_id() -> Optional[str]:
     """Automatically extract User ID from Roblox app local files or cookie."""
     print("Checking for Roblox app and local files...")
@@ -325,28 +432,26 @@ def auto_extract_user_id() -> Optional[str]:
         else:
             print("Log directory not found.")
         
-        storage_dir = find_storage_directory(package_name)
-        if storage_dir:
-            print(f"Found storage directory: {storage_dir}")
-            success, output = run_shell_cmd(f"ls {storage_dir}/*.db* 2>/dev/null | head -5", use_root=True, silent=True)
-            if success and output.strip():
-                print(f"Checking storage files...")
-                for line in output.strip().split("\n"):
-                    storage_file = line.strip()
-                    if storage_file:
-                        print(f"Checking: {storage_file}")
-                        success, content = run_shell_cmd(f"cat {storage_file}", use_root=True, silent=True)
-                        if success and content:
-                            content_bytes = content.encode('utf-8', errors='ignore')
-                            user_matches = re.findall(rb'userId["\s:]+(\d{8,12})', content_bytes)
-                            if user_matches:
-                                user_id = user_matches[-1].decode('utf-8')
-                                print(f"User ID extracted: {user_id}")
-                                return user_id
-            else:
-                print("No storage database files found.")
+        db_files = find_user_id_databases(package_name)
+        if db_files:
+            print(f"Found {len(db_files)} potential database/storage files...")
+            
+            for db_path in db_files[:10]:
+                filename = os.path.basename(db_path)
+                print(f"Checking: {filename}")
+                
+                if db_path.endswith('.xml'):
+                    user_id = extract_user_id_from_xml(db_path)
+                else:
+                    user_id = extract_user_id_from_database(db_path)
+                
+                if user_id:
+                    print(f"User ID extracted from {filename}: {user_id}")
+                    return user_id
+            
+            print("User ID not found in database files.")
         else:
-            print("Storage directory not found.")
+            print("No database/storage files found.")
     
     print("User ID not found in local files.")
     print("You may need to run Roblox at least once to generate log files.")
