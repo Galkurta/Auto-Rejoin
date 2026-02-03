@@ -32,7 +32,7 @@ class DiscordNotifier:
         )
         self.user_id = user_id
         self.username, self.display_name = get_user_info(user_id)
-        self.avatar_url = get_user_avatar(user_id) if self.username else None
+        self.avatar_url = get_user_avatar(user_id)
 
     def format_mention(self):
         if not self.mention_user:
@@ -90,11 +90,13 @@ class DiscordNotifier:
             "fields": fields,
         }
 
-        if show_user_info and self.username:
-            embed["author"] = {
-                "name": f"{self.display_name}",
-                "icon_url": self.avatar_url,
+        if show_user_info and (self.username or self.display_name):
+            author_data = {
+                "name": self.display_name or self.username or "Unknown User",
             }
+            if self.avatar_url:
+                author_data["icon_url"] = self.avatar_url
+            embed["author"] = author_data
 
         fields.append(
             {
