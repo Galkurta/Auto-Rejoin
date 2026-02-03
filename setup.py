@@ -102,6 +102,80 @@ def extract_user_id_from_cookie(cookie: str) -> Optional[str]:
     return None
 
 
+def extract_cookie_from_roblox_app() -> Optional[str]:
+    """Extract Roblox cookie from Roblox app on Android."""
+    package_name = find_roblox_package()
+    if not package_name:
+        return None
+    
+    shared_prefs_dir = f"/data/data/{package_name}/shared_prefs"
+    success, output = run_shell_cmd(f"ls {shared_prefs_dir} 2>/dev/null", use_root=True, silent=False)
+    
+    if not success or not output:
+        return None
+    
+    cookie_pattern = rb'"ROBLOSECURITY"\s*>\s*([^<]+)'
+    
+    for pref_file in output.strip().split("\n"):
+        pref_path = f"{shared_prefs_dir}/{pref_file.strip()}"
+        success, content = run_shell_cmd(f"cat {pref_path}", use_root=True, silent=True)
+        if success and content:
+            content_bytes = content.encode('utf-8', errors='ignore')
+            matches = re.findall(cookie_pattern, content_bytes)
+            if matches:
+                cookie = matches[-1].decode('utf-8').strip()
+                if cookie and cookie != "null":
+                    return cookie
+    
+    return None
+
+
+def extract_cookie_from_chrome_android() -> Optional[str]:
+    """Extract Roblox cookie from Chrome browser on Android."""
+    package_name = "com.android.chrome"
+    cookies_path = "/data/data/com.android.chrome/app_chrome/Default/Cookies"
+    
+    success, output = run_shell_cmd(f"test -f {cookies_path} && echo 'exists'", use_root=True, silent=False)
+    if not success or "exists" not in output:
+        return None
+    
+    try:
+        success, content = run_shell_cmd(f"cat {cookies_path}", use_root=True, silent=True)
+        if not success or not content:
+            return None
+        
+        pattern = rb'.ROBLOSECURITY([^\x00]+?)(?:\x00|$)'
+        matches = re.findall(pattern, content.encode('utf-8', errors='ignore'))
+        if matches:
+            for match in matches:
+                cookie = match.decode('utf-8', errors='ignore').strip()
+                if cookie and len(cookie) > 50 and cookie.startswith('"'):
+                    cookie = cookie.strip('"')
+                    return cookie
+    except Exception:
+        pass
+    
+    return None
+
+
+def auto_extract_cookie() -> Optional[str]:
+    """Automatically extract Roblox cookie from available sources."""
+    print("Attempting to extract cookie automatically...")
+    
+    cookie = extract_cookie_from_roblox_app()
+    if cookie:
+        print("Cookie extracted from Roblox app.")
+        return cookie
+    
+    cookie = extract_cookie_from_chrome_android()
+    if cookie:
+        print("Cookie extracted from Chrome browser.")
+        return cookie
+    
+    print("No cookie found in automatic sources.")
+    return None
+
+
 def auto_extract_user_id() -> Optional[str]:
     """Automatically extract User ID from Roblox app local files or cookie."""
     print("Checking for Roblox app and local files...")
@@ -269,16 +343,58 @@ def setup() -> None:
                 error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
             )
     else:
-        use_cookie = get_yes_no_input("Use cookie to get User ID? (Cookie will NOT be saved)", False)
-        if use_cookie:
-            cookie = input("Enter your Roblox cookie (.ROBLOSECURITY): ").strip()
-            if cookie:
-                print("Fetching User ID from cookie...")
-                user_id = extract_user_id_from_cookie(cookie)
-                if user_id:
-                    print(f"User ID retrieved: {user_id}")
+        auto_cookie = auto_extract_cookie()
+        if auto_cookie:
+            print("Fetching User ID from auto-extracted cookie...")
+            user_id = extract_user_id_from_cookie(auto_cookie)
+            if user_id:
+                print(f"User ID retrieved: {user_id}")
+            else:
+                print("Failed to get User ID from auto-extracted cookie.")
+                use_cookie = get_yes_no_input("Enter cookie manually?", False)
+                if use_cookie:
+                    cookie = input("Enter your Roblox cookie (.ROBLOSECURITY): ").strip()
+                    if cookie:
+                        print("Fetching User ID from cookie...")
+                        user_id = extract_user_id_from_cookie(cookie)
+                        if user_id:
+                            print(f"User ID retrieved: {user_id}")
+                        else:
+                            print("Failed to get User ID from cookie. Please enter manually.")
+                            user_id = get_validated_input(
+                                "Roblox User ID: ",
+                                validate_user_id,
+                                error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
+                            )
+                    else:
+                        user_id = get_validated_input(
+                            "Roblox User ID: ",
+                            validate_user_id,
+                            error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
+                        )
                 else:
-                    print("Failed to get User ID from cookie. Please enter manually.")
+                    user_id = get_validated_input(
+                        "Roblox User ID: ",
+                        validate_user_id,
+                        error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
+                    )
+        else:
+            use_cookie = get_yes_no_input("Enter cookie manually to get User ID? (Cookie will NOT be saved)", False)
+            if use_cookie:
+                cookie = input("Enter your Roblox cookie (.ROBLOSECURITY): ").strip()
+                if cookie:
+                    print("Fetching User ID from cookie...")
+                    user_id = extract_user_id_from_cookie(cookie)
+                    if user_id:
+                        print(f"User ID retrieved: {user_id}")
+                    else:
+                        print("Failed to get User ID from cookie. Please enter manually.")
+                        user_id = get_validated_input(
+                            "Roblox User ID: ",
+                            validate_user_id,
+                            error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
+                        )
+                else:
                     user_id = get_validated_input(
                         "Roblox User ID: ",
                         validate_user_id,
@@ -290,12 +406,6 @@ def setup() -> None:
                     validate_user_id,
                     error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
                 )
-        else:
-            user_id = get_validated_input(
-                "Roblox User ID: ",
-                validate_user_id,
-                error_msg="Invalid User ID. Please enter a valid numeric Roblox User ID."
-            )
 
     check_interval = get_validated_input(
         f"Check Interval (seconds, default {DEFAULT_CHECK_INTERVAL}): ",
