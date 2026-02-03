@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import sqlite3
 import subprocess
 import re
 import requests
@@ -87,92 +88,216 @@ def find_storage_directory(package_name: str) -> Optional[str]:
 def extract_user_id_from_cookie(cookie: str) -> Optional[str]:
     """Extract User ID from Roblox cookie using API."""
     try:
+        url = "https://users.roblox.com/v1/users/authenticated"
         headers = {
             "Cookie": f".ROBLOSECURITY={cookie}",
-            "User-Agent": "Roblox/WinInet",
-            "Referer": "https://www.roblox.com/"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         }
-        response = requests.get("https://users.roblox.com/v1/users/authenticated", headers=headers, timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             data = response.json()
-            user_id = data.get("id")
-            return str(user_id)
-    except Exception:
-        pass
+            return str(data.get("id"))
+        elif response.status_code == 401:
+            print("Error: Cookie appears to be invalid or expired")
+    except Exception as e:
+        print(f"Error fetching user info: {e}")
     return None
 
 
-def extract_cookie_from_roblox_app() -> Optional[str]:
-    """Extract Roblox cookie from Roblox app on Android."""
-    package_name = find_roblox_package()
-    if not package_name:
-        return None
+def find_cookie_databases(package_name: str) -> List[str]:
+    """Find cookie database files for a given package."""
+    base_path = f"/data/data/{package_name}"
+    possible_paths = [
+        f"{base_path}/app_chrome/Default/Cookies",
+        f"{base_path}/app_chrome/Profile */Cookies",
+        f"{base_path}/app_msedge/Default/Cookies",
+        f"{base_path}/databases/webviewCookiesChromium.db",
+        f"{base_path}/app_webview/Cookies",
+        f"{base_path}/app_webview/Default/Cookies",
+    ]
     
-    shared_prefs_dir = f"/data/data/{package_name}/shared_prefs"
-    success, output = run_shell_cmd(f"ls {shared_prefs_dir} 2>/dev/null", use_root=True, silent=False)
+    if "firefox" in package_name:
+        success, output = run_shell_cmd(f'find {base_path} -name "cookies.sqlite" 2>/dev/null', use_root=True, silent=False)
+        if success and output:
+            return [p.strip() for p in output.split("\n") if p.strip()]
     
-    if not success or not output:
-        return None
+    found_paths = []
+    for path in possible_paths:
+        if "*" in path:
+            success, output = run_shell_cmd(f"ls {path} 2>/dev/null", use_root=True, silent=False)
+            if success and output:
+                for line in output.split("\n"):
+                    if line.strip():
+                        found_paths.append(line.strip())
+        else:
+            success, _ = run_shell_cmd(f'test -f {path} && echo "exists"', use_root=True, silent=False)
+            if success:
+                found_paths.append(path)
     
-    cookie_pattern = rb'"ROBLOSECURITY"\s*>\s*([^<]+)'
-    
-    for pref_file in output.strip().split("\n"):
-        pref_path = f"{shared_prefs_dir}/{pref_file.strip()}"
-        success, content = run_shell_cmd(f"cat {pref_path}", use_root=True, silent=True)
-        if success and content:
-            content_bytes = content.encode('utf-8', errors='ignore')
-            matches = re.findall(cookie_pattern, content_bytes)
-            if matches:
-                cookie = matches[-1].decode('utf-8').strip()
-                if cookie and cookie != "null":
-                    return cookie
-    
-    return None
+    return found_paths
 
 
-def extract_cookie_from_chrome_android() -> Optional[str]:
-    """Extract Roblox cookie from Chrome browser on Android."""
-    package_name = "com.android.chrome"
-    cookies_path = "/data/data/com.android.chrome/app_chrome/Default/Cookies"
-    
-    success, output = run_shell_cmd(f"test -f {cookies_path} && echo 'exists'", use_root=True, silent=False)
-    if not success or "exists" not in output:
-        return None
-    
+def copy_database(db_path: str, temp_path: str) -> bool:
+    """Copy database file to accessible location."""
     try:
-        success, content = run_shell_cmd(f"cat {cookies_path}", use_root=True, silent=True)
-        if not success or not content:
+        success, _ = run_shell_cmd(f'cp "{db_path}" "{temp_path}"', use_root=True, silent=False)
+        if not success:
+            return False
+        run_shell_cmd(f'chmod 666 "{temp_path}"', use_root=True, silent=False)
+        return True
+    except:
+        return False
+
+
+def extract_cookie_chromium(db_path: str) -> Optional[str]:
+    """Extract Roblox cookie from Chromium-based browser database."""
+    temp_db = "/sdcard/temp_cookies_chromium.db"
+    try:
+        if not copy_database(db_path, temp_db):
             return None
         
-        pattern = rb'.ROBLOSECURITY([^\x00]+?)(?:\x00|$)'
-        matches = re.findall(pattern, content.encode('utf-8', errors='ignore'))
-        if matches:
-            for match in matches:
-                cookie = match.decode('utf-8', errors='ignore').strip()
-                if cookie and len(cookie) > 50 and cookie.startswith('"'):
-                    cookie = cookie.strip('"')
-                    return cookie
-    except Exception:
-        pass
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute("""
+                SELECT name, value, host_key 
+                FROM cookies 
+                WHERE (host_key LIKE '%roblox.com%' OR host_key LIKE '%www.roblox.com%')
+                AND name = '.ROBLOSECURITY'
+            """)
+            result = cursor.fetchone()
+        except:
+            try:
+                cursor.execute("""
+                    SELECT name, value 
+                    FROM cookies 
+                    WHERE name = '.ROBLOSECURITY'
+                """)
+                result = cursor.fetchone()
+            except:
+                result = None
+        
+        conn.close()
+        
+        if os.path.exists(temp_db):
+            os.remove(temp_db)
+        
+        if result:
+            return result[1] if len(result) > 1 else result[0]
+        
+        return None
+    except Exception as e:
+        if os.path.exists(temp_db):
+            os.remove(temp_db)
+        return None
+
+
+def extract_cookie_firefox(db_path: str) -> Optional[str]:
+    """Extract Roblox cookie from Firefox database."""
+    temp_db = "/sdcard/temp_cookies_firefox.db"
+    try:
+        if not copy_database(db_path, temp_db):
+            return None
+        
+        conn = sqlite3.connect(temp_db)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT name, value, host 
+            FROM moz_cookies 
+            WHERE host LIKE '%roblox.com%' 
+            AND name = '.ROBLOSECURITY'
+        """)
+        result = cursor.fetchone()
+        conn.close()
+        
+        if os.path.exists(temp_db):
+            os.remove(temp_db)
+        
+        if result:
+            return result[1]
+        
+        return None
+    except Exception as e:
+        if os.path.exists(temp_db):
+            os.remove(temp_db)
+        return None
+
+
+def get_all_installed_browsers() -> Dict[str, str]:
+    """Get all installed supported browsers and apps."""
+    browsers = {
+        "Chrome": "com.android.chrome",
+        "Chrome Beta": "com.chrome.beta",
+        "Chrome Dev": "com.chrome.dev",
+        "Chrome Canary": "com.chrome.canary",
+        "Edge": "com.microsoft.emmx",
+        "Firefox": "org.mozilla.firefox",
+        "Opera": "com.opera.browser",
+        "Samsung Internet": "com.sec.android.app.sbrowser",
+        "Brave": "com.brave.browser",
+        "Kiwi Browser": "com.kiwibrowser.browser",
+        "DuckDuckGo": "com.duckduckgo.mobile.android",
+        "Roblox App": "com.roblox.client",
+    }
     
-    return None
+    installed = {}
+    for name, package in browsers.items():
+        success, output = run_shell_cmd(f"pm list packages | grep {package}", use_root=True, silent=False)
+        if success and package in output:
+            installed[name] = package
+    
+    return installed
 
 
 def auto_extract_cookie() -> Optional[str]:
     """Automatically extract Roblox cookie from available sources."""
+    if not check_root():
+        print("Root access required for auto cookie extraction")
+        print("You'll need to enter cookie manually\n")
+        return None
+    
     print("Attempting to extract cookie automatically...")
     
-    cookie = extract_cookie_from_roblox_app()
-    if cookie:
-        print("Cookie extracted from Roblox app.")
-        return cookie
+    installed_browsers = get_all_installed_browsers()
+    if not installed_browsers:
+        print("No supported browsers/apps found for auto extraction")
+        print("You'll need to enter cookie manually\n")
+        return None
     
-    cookie = extract_cookie_from_chrome_android()
-    if cookie:
-        print("Cookie extracted from Chrome browser.")
-        return cookie
+    cookie_found = False
+    cookie_value = None
+    found_in = None
     
-    print("No cookie found in automatic sources.")
+    for browser_name, package_name in installed_browsers.items():
+        print(f"Checking {browser_name} for cookie...")
+        
+        db_paths = find_cookie_databases(package_name)
+        if not db_paths:
+            continue
+        
+        for db_path in db_paths:
+            if "firefox" in package_name:
+                cookie = extract_cookie_firefox(db_path)
+            else:
+                cookie = extract_cookie_chromium(db_path)
+            
+            if cookie:
+                cookie_value = cookie
+                cookie_found = True
+                found_in = browser_name
+                print(f"Cookie found in {browser_name}!")
+                break
+        
+        if cookie_found:
+            break
+    
+    if cookie_found and cookie_value:
+        print(f"Cookie extracted successfully ({len(cookie_value)} characters)\n")
+        return cookie_value
+    
+    print("Cookie not found automatically")
+    print("You'll need to enter cookie manually\n")
     return None
 
 
