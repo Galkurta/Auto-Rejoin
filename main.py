@@ -47,7 +47,12 @@ class DiscordNotifier:
 
     def get_system_info(self):
         try:
-            cpu_percent = psutil.cpu_percent(interval=1)
+            # cpu_percent can fail on Android/Termux
+            try:
+                cpu_percent = psutil.cpu_percent(interval=0.5)
+            except Exception:
+                cpu_percent = 0.0
+            
             ram = psutil.virtual_memory()
             ram_percent = ram.percent
             ram_used_gb = ram.used / (1024**3)
